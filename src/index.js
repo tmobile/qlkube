@@ -6,14 +6,19 @@ const {createSchema} = require('./schema');
 const getOpenApiSpec = require('./oas');
 const { printSchema } = require('graphql');
 const logger = require('pino')({useLevelLabels: true});
+const dotenv = require('dotenv');
+dotenv.config();
 
 main().catch(e => logger.error({error: e.stack}, "failed to start qlkube server"));
 
 async function main() {
     const inCluster = process.env.IN_CLUSTER !== 'false';
     logger.info({inCluster}, "cluster mode configured");
-    const kubeApiUrl = inCluster ? 'https://kubernetes.default.svc' : 'http://localhost:8001';
-    const token = inCluster ? await fs.readFile('/var/run/secrets/kubernetes.io/serviceaccount/token', 'utf8') : '';
+    const kubeApiUrl = process.env.K8_API_URL || (inCluster ? 'https://kubernetes.default.svc' : 'http://localhost:8001');
+    const token = process.env.TOKEN || (inCluster ? await fs.readFile('/var/run/secrets/kubernetes.io/serviceaccount/token', 'utf8') : '');
+    if(process.env.K8_API_URL) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0
+    }
 
     const oas = await getOpenApiSpec(kubeApiUrl, token);
     const schema = await createSchema(oas, kubeApiUrl, token);
