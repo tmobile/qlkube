@@ -1,0 +1,21 @@
+# Injection of templates
+include:
+  # Injects TMO Global Shared (handles certs, lists blacklisted files etc.)  
+  - project: 'tmobile/templates'
+    ref: tmo/master
+    file: '/gitlab-ci/.tmo.global.common.gitlab-ci.yml'
+
+  - project: 'tmobile/templates'
+    ref: tmo/master
+    file: '/gitlab-ci/.tmo.function.docker.gitlab-ci.yml'
+
+stages:
+  - tmo
+  - build
+  - test
+  
+build:
+  stage: build
+  variables:
+    EXTRA_DOCKER_TAG: "$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG:$CI_COMMIT_SHORT_SHA"
+  extends: .docker-package
