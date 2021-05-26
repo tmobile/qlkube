@@ -1,0 +1,69 @@
+metadata:
+  namespace: {{ CONDUCKTOR_NS }}
+  releaseName: {{ CI_PROJECT_NAME }}-{{ CI_COMMIT_REF_SLUG }}
+  releaseVersion: 1.0.0
+  target: {{ CONDUCKTOR_TARGET }}
+  iamRole: null
+replicaCount: 1
+nodeLabel: agent
+image:
+  repository: {{ CI_REGISTRY_IMAGE }}/{{ CI_COMMIT_REF_SLUG }}:{{ CI_COMMIT_SHA }}
+  pullPolicy: Always
+  pullSecrets:
+    - name: qlkube-deploy-token
+container:
+  multiPorts:
+    - name: admin
+      containerPort: 4000
+      protocol: TCP
+  healthcheck:
+    path: /health
+    scheme: HTTP
+    portName: admin
+resources:
+  requests:
+    cpu: 0.1
+    memory: 16Mi
+  limits:
+    cpu: 0.2
+    memory: 768Mi
+variables: null
+volumeMaps: null
+persistentVolumeClaims: null
+secrets: null
+secretMaps: null
+configMaps: null
+envFrom:
+  configMaps: []
+  secrets: ['qlkube-env-vars']
+ingress:
+  enabled: true
+  ingressType: HTTP
+  applicationType: internal
+  serviceEndpoint: {{ CI_COMMIT_REF_SLUG }}-qlkube.web.css.kube.t-mobile.com
+  multiPaths:
+    - path: /
+      portName: admin
+tls:
+  enabled: true
+  secretName: "conducktor-certificate"
+autoscale:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  cpuAverageUtilization: 50
+telemetry:
+  enabled: false
+  path: /prometheus
+  port: "8080"
+  scheme: HTTP
+global:
+  ttl: 10d
+  expiresAt: ""
+annotations:
+  deployment:
+    swaggerUri: ""
+openTelemetry:
+  enabled: false
+  exporterOtlpEndpoint: ""
+  resourceAttributes: ""

@@ -1,21 +1,56 @@
-# Injection of templates
 include:
-  # Injects TMO Global Shared (handles certs, lists blacklisted files etc.)  
   - project: 'tmobile/templates'
     ref: tmo/master
     file: '/gitlab-ci/.tmo.global.common.gitlab-ci.yml'
-
   - project: 'tmobile/templates'
     ref: tmo/master
     file: '/gitlab-ci/.tmo.function.docker.gitlab-ci.yml'
+  - project: "tmobile/templates"
+    ref: "tmo/master"
+    file: "gitlab-ci/.tmo.job.dockerScan.gitlab-ci.yml"
+  - project: "tmobile/templates"
+    ref: tmo/master
+    file: "/gitlab-ci/.tmo.function.duck-deploy.gitlab-ci.yml"
 
 stages:
   - tmo
-  - build
   - test
-  
-build:
-  stage: build
+  - package
+  - ci
+  - deploy
+
+variables:
+  ALLOW_SONAR_FAILURE: "true"
+  NODE_VERSION: "14.15.1"
+  GIT_DEPTH: 1
+
+docker_build:
+  stage: package
   variables:
-    EXTRA_DOCKER_TAG: "$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG:$CI_COMMIT_SHORT_SHA"
+    DOCKER_BUILD_ARGS: "--build-arg SSH_KEY=$SSH_PRIVATE_KEY_BASE64"
   extends: .docker-package
+
+deploy_sbx:
+  stage: deploy
+  extends: .duck_deploy
+  variables:
+    CONDUCKTOR_CONFIG_PATH: ./sbx_deploy_info.yaml
+    CONDUCKTOR_NS: css-sbx-duck-dev-w2
+    CONDUCKTOR_TARGET: duck-dev-w2
+    DUCK_DEBUG: "true"
+  environment:
+    name: sbx
+  rules:
+    - if: $CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH
+
+deploy_dev:
+  stage: deploy
+  extends: .duck_deploy
+  variables:
+    CONDUCKTOR_CONFIG_PATH: ./dev_deploy_info.yaml
+    CONDUCKTOR_NS: css-dev-duck-dev-w2
+    CONDUCKTOR_TARGET: duck-dev-w2
+  environment:
+    name: dev
+  rules:
+    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
