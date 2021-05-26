@@ -1,103 +1,276 @@
-const {GraphQLString, GraphQLSchema, GraphQLObjectType, GraphQLBoolean} = require('graphql');
-const {mergeSchemas} = require('graphql-tools');
-const {createGraphQlSchema} = require('oasgraph');
+/* eslint-disable */
+const { GraphQLString, GraphQLSchema, GraphQLObjectType } = require('graphql');
+const { mergeSchemas } = require('graphql-tools');
+const { createGraphQLSchema } = require('openapi-to-graphql');
+const logger = require('pino')({ useLevelLabels: true });
+const watch = require('./watch');
 
-exports.createSchema = async (oas, kubeApiUrl, token) => {
-    let baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl, token)
-    return decorateSchema(baseSchema)
+const hasOuterWatch = (path) => {
+  // check outer parameters of path
+  if (path.parameters) {
+    for (const param of path.parameters) {
+      if (param.name === 'watch') {
+        return true;
+      }
+    }
+  }
+  return false;
 };
 
-async function oasToGraphQlSchema(oas, kubeApiUrl, token) {
-    const {schema} = await createGraphQlSchema(oas, {
-        baseUrl: kubeApiUrl,
-        viewer: false,
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-    });
-    return schema
-}
-
-// adds an 'all' type to the schema
-function decorateSchema(baseSchema) {
-    //TODO: extract query type names to env vars
-    const allType = new GraphQLObjectType({
-        name: 'all',
-        description: 'All kube resources.',
-        fields: {
-            services: createType({name: "services", allNamespaceQueryName: "listCoreV1ServiceForAllNamespaces", namespacedQueryName: "ioK8sApiCoreV1ServiceList", baseSchema}),
-            deployments: createType({name: "deployments", allNamespaceQueryName: "ioK8sApiAppsV1DeploymentList", namespacedQueryName: "listAppsV1NamespacedDeployment", baseSchema}),
-            pods: createType({name: "pods", allNamespaceQueryName: "listCoreV1PodForAllNamespaces", namespacedQueryName: "ioK8sApiCoreV1PodList", baseSchema}),
-            daemonSets: createType({name: "daemonSets", allNamespaceQueryName: "ioK8sApiAppsV1DaemonSetList", namespacedQueryName: "listAppsV1NamespacedDaemonSet", baseSchema}),
-            replicaSets: createType({name: "replicaSets", allNamespaceQueryName: "listAppsV1ReplicaSetForAllNamespaces", namespacedQueryName: "ioK8sApiAppsV1ReplicaSetList", baseSchema}),
-            statefulSets: createType({name: "statefulSets", allNamespaceQueryName: "listAppsV1StatefulSetForAllNamespaces", namespacedQueryName: "ioK8sApiAppsV1StatefulSetList", baseSchema}),
-            jobs: createType({name: "jobs", allNamespaceQueryName: "ioK8sApiBatchV1JobList", namespacedQueryName: "listBatchV1NamespacedJob", baseSchema}),
-            cronJobs: createType({name: "cronJobs", allNamespaceQueryName: "ioK8sApiBatchV1beta1CronJobList", namespacedQueryName: "listBatchV1beta1NamespacedCronJob", baseSchema}),
-            namespaces: createNamespaceType({name: "namespaces", allNamespaceQueryName: "ioK8sApiCoreV1NamespaceList", baseSchema}),
-            configmaps: createType({name: "configmaps", allNamespaceQueryName: "ioK8sApiCoreV1ConfigMapList", namespacedQueryName: "listCoreV1NamespacedConfigMap", baseSchema}),
-        }
-    });
-
-    const schema = new GraphQLSchema({
-        query: new GraphQLObjectType({
-            name: 'query',
-            fields: {
-                all: {
-                    type: allType,
-                    args: {
-                        fieldSelector: {type: GraphQLString},
-                        namespace: {type: GraphQLString},
-                        labelSelector: {type: GraphQLString}
-                    },
-                    resolve(_, args) {
-                        return args // pass above args down to child resolvers as 'parent' object (args fields won't be accessible in served object)
-                    }
-                }
-            }
-        })
-    });
-
-    const schemas = [baseSchema, schema];
-    return mergeSchemas({schemas});
-}
-
-// creates a type that lifts the return type and resolve methods from the existing generated schema methods
-function createType({name, allNamespaceQueryName, namespacedQueryName, baseSchema}) {
-    const allNamespaceQueryType = baseSchema.getQueryType().getFields()[allNamespaceQueryName];
-    const namespacedQueryType = baseSchema.getQueryType().getFields()[namespacedQueryName];
-    return {
-        type: allNamespaceQueryType.type, //return type is the same for both namespaced and all-namespace variants.
-        description: `All ${name} in all namespaces.`,
-        resolve(parent, args, context, info) {
-            return parent.namespace ?
-                namespacedQueryType.resolve(parent, parent, context, info) : // 'parent' in this case is just the args passed to the 'all' parent, which is what we want to use as args here
-                allNamespaceQueryType.resolve(parent, parent, context, info);
-        }
+const hasGetWatch = (path) => {
+  // check parameters of get operation
+  if (path.get && path.get.parameters) {
+    for (const param of path.get.parameters) {
+      if (param.name === 'watch') {
+        return true;
+      }
     }
-}
+  }
+  return false;
+};
 
-// Namespace has to be handled slightly differently to pods, deployments etc. as the singular 'namespaced' query type (`ioK8sApiCoreV1Namespace`)
-// returns a different (singular) type rather than a `IoK8sApiCoreV1NamespaceList` - we must therefore instead manually filter
-// the list to ensure parity.
-function createNamespaceType({allNamespaceQueryName, baseSchema}) {
-    const allNamespaceQueryType = baseSchema.getQueryType().getFields()[allNamespaceQueryName];
-    return {
-        type: allNamespaceQueryType.type,
-        description: `All namespaces.`,
-        async resolve(parent, args, context, info) {
-            const namespacesProm = allNamespaceQueryType.resolve(parent, parent, context, info);
-            if (parent.namespace) { // if 'namespace' argument provided to `all` query, then filter items in namespace list
-                const namespaces = await namespacesProm;
-                namespaces.items = namespaces.items.filter(ns => ns.metadata.name === parent.namespace);
-                return namespaces
-            }
-            return namespacesProm
-        }
+const hasWatch = (path) => hasOuterWatch(path) || hasGetWatch(path);
+
+const injectUrl = (path, namespace) => {
+  let urlInject = '';
+  for (const pathSegment of path) {
+    if (pathSegment !== '' && pathSegment !== '{name}') {
+      pathSegment !== '{namespace}'
+        ? (urlInject += `/${pathSegment}`)
+        : (urlInject += `/${namespace}`);
     }
+  }
+  return path.length > 0 ? urlInject : '';
+};
+
+exports.hasWatchExp = (path) => hasOuterWatch(path) || hasGetWatch(path);
+
+const WATCH_PARAM_NAMES = ['allowWatchBookmarks', 'watch', 'timeoutSeconds'];
+const removeWatchParams = (path) => {
+  const newPath = JSON.parse(JSON.stringify(path));
+  newPath.parameters = newPath.parameters.filter(
+    (param) => !WATCH_PARAM_NAMES.includes(param.name)
+  );
+  return newPath;
+};
+
+/**
+ * Returns array of paths that are watchable
+ * @param {Object} oas OpenAPI Spec from cluster
+ */
+exports.getWatchables = (oas) => {
+  const watchPaths = [];
+  const mappedWatchPath = {};
+  const mappedNamespacedPaths = {};
+  for (const pathName in oas.paths) {
+    const path = oas.paths[pathName];
+
+    if (hasWatch(path)) {
+      const currentPathKeys = Object.keys(path);
+      const pathKind =
+        path[currentPathKeys[0]]['x-kubernetes-group-version-kind'].kind;
+      const hasNamespaceUrl = pathName.includes('{namespace}');
+      if (!hasNamespaceUrl) {
+        if (mappedWatchPath[pathKind]) {
+          const tempPaths = [...mappedWatchPath[pathKind], pathName];
+          mappedWatchPath[pathKind.toUpperCase()] = tempPaths;
+        } else {
+          mappedWatchPath[pathKind.toUpperCase()] = [pathName];
+        }
+      } else if (mappedNamespacedPaths[pathKind]) {
+        const tempPaths = [...mappedNamespacedPaths[pathKind], pathName];
+        mappedNamespacedPaths[pathKind.toUpperCase()] = tempPaths;
+      } else {
+        mappedNamespacedPaths[pathKind.toUpperCase()] = [pathName];
+      }
+      watchPaths.push(path);
+    }
+  }
+
+  return { watchPaths, mappedWatchPath, mappedNamespacedPaths };
+};
+
+/**
+ * Removes the parameters having to do with watching on all watchable paths (since watching with graphQL doesn't make any sense)
+ * This simplifies the args for query types in graphQL
+ * @param {Object} oas OpenAPI Spec from cluster
+ */
+exports.deleteWatchParameters = (oas) => {
+  const newOAS = JSON.parse(JSON.stringify(oas)); // Javascript is wierd, this is deep copy.
+  for (const pathName in newOAS.paths) {
+    const path = newOAS.paths[pathName];
+    if (hasOuterWatch(path)) {
+      newOAS.paths[pathName] = removeWatchParams(path);
+    }
+    if (hasGetWatch(path)) {
+      newOAS.paths[pathName].get = removeWatchParams(path.get);
+    }
+  }
+  return newOAS;
+};
+
+/**
+ * Removes all endpoints with /watch/ in the pathname since those are now deprecated.
+ * @param {object} oas The Open API Spec from k8s cluster
+ */
+exports.deleteDeprecatedWatchPaths = (oas) => {
+  const newOAS = JSON.parse(JSON.stringify(oas)); // Javascript is wierd, this is deep copy.
+  for (const pathName in newOAS.paths) {
+    // don't include /watch/ paths since they are deprecated.
+    if (pathName.includes('/watch/')) {
+      delete newOAS.paths[pathName];
+    }
+  }
+  return newOAS;
+};
+
+async function oasToGraphQlSchema(oas, kubeApiUrl) {
+  const { schema } = await createGraphQLSchema(oas, {
+    baseUrl: kubeApiUrl,
+    viewer: false,
+    requestOptions: (method, path, title, resolverParams) => {
+      if (
+        resolverParams &&
+        resolverParams.context &&
+        resolverParams.context.clusterURL
+      ) {
+        return {
+          url: `${resolverParams.context.clusterURL}${path}`,
+        };
+      }
+      return null;
+    },
+    headers: (method, path, title, resolverParams) => ({
+      Authorization: `${resolverParams.context.authorization}`,
+      'Content-Type': 'application/json',
+    }),
+  });
+  return schema;
 }
 
-// TODO: all by namespace
-// TODO: all by label
-// TODO: serve raw schema
+function createSubscriptionSchema(
+  baseSchema,
+  schemaType,
+  k8sType,
+  k8sUrl,
+  watchableNonNamespacePaths,
+  mappedNamespacedPaths
+) {
+  const k8Data = { k8sUrl, k8sType, schemaType };
+  const ObjectEventName = `${k8sType}Event`;
 
+  const queryType = new GraphQLObjectType({
+    name: 'Query',
+    fields: {
+      _dummy: { type: GraphQLString },
+    },
+  });
+
+  const ObjectEventType = new GraphQLObjectType({
+    name: ObjectEventName,
+    fields: {
+      event: { type: GraphQLString },
+      object: { type: baseSchema.getType(schemaType) },
+    },
+  });
+
+  const kind = k8sType.toUpperCase();
+  const events = [`${kind}_MODIFIED`, `${kind}_ADDED`, `${kind}_DELETED`];
+
+  function newSubscription(parent, args, context) {
+    const { namespace = null } = args;
+    const pathIncludesRawNamespace = k8Data.k8sUrl.includes('{namespace}');
+    let pathUrl = k8Data.k8sUrl;
+
+    if (namespace && pathIncludesRawNamespace) {
+      logger.info('Namespace Provided!', namespace);
+      const focusedPath = k8Data.k8sUrl.split('/') || [];
+      const injectedUrl = injectUrl(focusedPath, namespace);
+      pathUrl = injectedUrl;
+    } else if (!namespace && pathIncludesRawNamespace) {
+      logger.info('No namespace provided!');
+      pathUrl =
+        watchableNonNamespacePaths[kind.toUpperCase()] &&
+        watchableNonNamespacePaths[kind.toUpperCase()][0]
+          ? watchableNonNamespacePaths[kind.toUpperCase()][0]
+          : '';
+    } else if (
+      namespace &&
+      !pathIncludesRawNamespace &&
+      mappedNamespacedPaths[kind.toUpperCase()][0]
+    ) {
+      logger.info('Namespace not provided and not not requested!');
+      const focusedPath =
+        mappedNamespacedPaths[kind.toUpperCase()][0].split('/');
+      const injectedUrl = injectUrl(focusedPath, namespace);
+      pathUrl = injectedUrl;
+    }
+    const ipAaddr = context.ipAddress;
+
+    // k8Data will not change if path dosent require a namspace at all
+    watch.setupWatch(
+      k8Data,
+      context.pubsub,
+      context.authorization,
+      context.clusterURL,
+      namespace,
+      ipAaddr,
+      pathUrl
+    );
+    return context.pubsub.asyncIterator(events);
+  }
+
+  const fields = {};
+  fields[ObjectEventName] = {
+    type: ObjectEventType,
+    args: {
+      namespace: { type: GraphQLString },
+    },
+    resolve: (payload) => payload,
+    subscribe: newSubscription,
+  };
+
+  const subscriptionType = new GraphQLObjectType({
+    name: 'Subscription',
+    fields,
+  });
+
+  const schema = new GraphQLSchema({
+    query: queryType,
+    subscription: subscriptionType,
+  });
+
+  return schema;
+}
+
+exports.createSchema = async (
+  oas,
+  kubeApiUrl,
+  subscriptions,
+  watchableNonNamespacePaths,
+  mappedNamespacedPaths
+) => {
+  const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl);
+  const schemas = [baseSchema];
+  const pathMap = {};
+
+  subscriptions.forEach((element) => {
+    const ObjectEventName = `${element.k8sType}Event`;
+    const includesNamespace = element.k8sUrl.includes('{namespace}');
+    const includesName = element.k8sUrl.includes('{name}');
+
+    if (includesName && includesNamespace && !pathMap[ObjectEventName]) {
+      pathMap[ObjectEventName] = true;
+      const schema = createSubscriptionSchema(
+        baseSchema,
+        element.schemaType,
+        element.k8sType,
+        element.k8sUrl,
+        watchableNonNamespacePaths,
+        mappedNamespacedPaths
+      );
+      schemas.push(schema);
+    }
+  });
+  return mergeSchemas({ schemas });
+};
