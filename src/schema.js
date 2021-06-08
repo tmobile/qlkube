@@ -177,6 +177,17 @@ function createSubscriptionSchema(
   const kind = k8sType.toUpperCase();
   const events = [`${kind}_MODIFIED`, `${kind}_ADDED`, `${kind}_DELETED`];
 
+  const withCancel = (asyncIterator, onCancel) => {
+    const asyncReturn = asyncIterator.return;
+  
+    asyncIterator.return = () => {
+      onCancel();
+      return asyncReturn ? asyncReturn.call(asyncIterator) : Promise.resolve({ value: undefined, done: true });
+    };
+  
+    return asyncIterator;
+  };
+  
   function newSubscription(parent, args, context) {
     const { namespace = null } = args;
     const pathIncludesRawNamespace = k8Data.k8sUrl.includes('{namespace}');
@@ -205,7 +216,7 @@ function createSubscriptionSchema(
       const injectedUrl = injectUrl(focusedPath, namespace);
       pathUrl = injectedUrl;
     }
-    const ipAaddr = context.ipAddress;
+    const ipAddr = context.ipAddress;
 
     // k8Data will not change if path dosent require a namspace at all
     watch.setupWatch(
@@ -214,10 +225,13 @@ function createSubscriptionSchema(
       context.authorization,
       context.clusterURL,
       namespace,
-      ipAaddr,
+      ipAddr,
       pathUrl
     );
-    return context.pubsub.asyncIterator(events);
+
+    return withCancel(context.pubsub.asyncIterator(events), () => {
+      watch.disconnectWatchable(ipAddr)
+    });
   }
 
   const fields = {};

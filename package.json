@@ -6,7 +6,7 @@
   "scripts": {
     "start": "DEBUG=http IN_CLUSTER='false' node src/index.js",
     "local": "IN_CLUSTER=false npm start",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha test --timeout 25000"
   },
   "repository": {
     "type": "git",
@@ -23,6 +23,7 @@
     "@kubernetes/client-node": "^0.13.2",
     "apollo-server": "^2.21.0",
     "apollo-server-express": "^2.9.7",
+    "chai": "^4.3.4",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^8.2.0",
@@ -31,7 +32,9 @@
     "graphql": "^14.5.8",
     "graphql-tools": "^4.0.6",
     "http": "0.0.1-security",
+    "mocha": "^8.4.0",
     "node-fetch": "^2.6.1",
+    "nyc": "^15.1.0",
     "openapi-to-graphql": "git+ssh://git@gitlab.com:tmobile/conducktor/self-service/openapi-to-graphql.git#v2.2.6-custom",
     "pino": "^5.13.6",
     "promise-any": "^0.2.0"
