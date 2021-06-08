@@ -19,6 +19,17 @@ stages:
   - ci
   - deploy
 
+unit-test:
+  stage: test
+  image: $CI_REGISTRY/tmobile/conducktor/self-service/baseimages/duckwebbase:1.2.0
+  script:
+    - node --version
+    - npm --version
+    - apt-get install -yq git openssh-client
+    - mkdir -p -m 0600 ~/.ssh && ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+    - ssh-agent sh -c 'echo $SSH_PRIVATE_KEY_BASE64 | base64 -d | ssh-add - ; npm install'
+    - npm run test
+
 variables:
   ALLOW_SONAR_FAILURE: "true"
   NODE_VERSION: "14.15.1"
