@@ -6,6 +6,7 @@
   "scripts": {
     "start": "DEBUG=http IN_CLUSTER='false' node src/index.js",
     "local": "IN_CLUSTER=false npm start",
+    "local-windows": "set IN_CLUSTER=false&&node src/index.js",
     "test": "mocha test --timeout 25000"
   },
   "repository": {
