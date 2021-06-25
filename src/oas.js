@@ -4,11 +4,15 @@ const openApiPaths = ['/openapi/v2'];
 
 module.exports = async function getOpenApiSpec(url, token) {
   const openApiUrl = url + openApiPaths[0];
-  const response = await fetch(openApiUrl, {
-    timeout: 5000,
-    headers: {
+  const requestOptions = {
+    timeout: 600000
+  };
+  if (token && token.length > 0) {
+    requestOptions.headers = {
       Authorization: `Bearer ${token}`,
-    },
-  });
+    }
+  }
+  const response = await fetch(openApiUrl, requestOptions);
+
   return response.json();
 };

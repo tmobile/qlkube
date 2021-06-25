@@ -109,7 +109,10 @@ async function main() {
     },
   });
 
-  const PORT = `${process.env.SERVER_PORT}`;
+  var PORT = `${process.env.SERVER_PORT}`;
+  if (!process.env.SERVER_PORT) {
+    PORT = 4000;
+  }
   const app = express();
   app.use(cors());
   app.get('/health', (req, res) => {
