@@ -11,7 +11,13 @@ function mapGraphQlDefaultPaths(spec) {
       .then((oas) => {
         resolve(translateOpenAPIToGraphQLREV([oas], options));
       })
-      .catch((err) => console.log('Error', err));
+      .catch((err) => {
+        return {
+          error:{
+            errorPayload:err
+          }
+        }
+      });
   });
 }
 

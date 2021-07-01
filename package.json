@@ -7,7 +7,8 @@
     "start": "DEBUG=http IN_CLUSTER='false' node src/index.js",
     "local": "IN_CLUSTER=false npm start",
     "local-windows": "set IN_CLUSTER=false&&node src/index.js",
-    "test": "mocha test --timeout 25000"
+    "test": "mocha test --timeout 30000",
+    "coverage": "nyc --reporter=html mocha test --timeout 30000"
   },
   "repository": {
     "type": "git",

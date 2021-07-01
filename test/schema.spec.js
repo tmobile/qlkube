@@ -1,10 +1,11 @@
 let chai = require('chai'); 
-const getOpenApiSpec = require('../src/oas');
 const {
     createSchema,
     getWatchables,
     deleteDeprecatedWatchPaths,
     deleteWatchParameters,
+    injectUrl,
+    hasWatchExp
 } = require('../src/schema');
 const utilities = require('../src/utilities');
 const openApiJSON = require('./openpispec.json')
@@ -12,7 +13,7 @@ const fs = require('fs').promises;
 require('dotenv').config();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 
-describe('the main function', () => {
+describe('functions in schema.js', () => {
     let kubeApiUrl= 'https://kubernetes.default.svc';
     let oasRaw;
     let oasWatchable;
@@ -25,6 +26,12 @@ describe('the main function', () => {
         oasRaw = openApiJSON
     })
 
+    it('should use path parameters to form path url', async() => {
+        const testPath = [ '', 'api', 'v1', 'namespaces', '{namespace}', 'pods', '{name}' ];
+        const testNamespace= 'css-dev-duck-dev-w2';
+        const testUrlInjectResponse= injectUrl(testPath, testNamespace);
+        chai.assert.notEqual(testUrlInjectResponse, '', 'url was not formed');
+    });
 
     it('should filter depreciated watch paths', async() => {
         oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
@@ -43,38 +50,11 @@ describe('the main function', () => {
     it('should remove watch from parameters', () => {
         oas = deleteWatchParameters(oasWatchable);
         let hasWatch= false;
-        const hasOuterWatch = (path) => {
-            // check outer parameters of path
-            if (path.parameters) {
-              for (const param of path.parameters) {
-                if (param.name === 'watch') {
-                  return true;
-                }
-              }
-            }
-            return false;
-          };
-          
-          const hasGetWatch = (path) => {
-            // check parameters of get operation
-            if (path.get && path.get.parameters) {
-              for (const param of path.get.parameters) {
-                if (param.name === 'watch') {
-                  return true;
-                }
-              }
-            }
-            return false;
-          };
         for (const pathName in oas.paths) {
             const path = oas.paths[pathName];
-            if (hasOuterWatch(path)) {
-                hasWatch= true;
-                break;
-            }
-            if (hasGetWatch(path)) {
-                hasWatch= true;
-                break;
+            hasWatch = hasWatchExp(path);
+            if(hasWatch){
+                break
             }
         }
         chai.assert.isFalse(hasWatch)
@@ -102,6 +82,7 @@ describe('the main function', () => {
     })
 
     it('should generate gql schema', async() => {
+
         const schema = await createSchema(
             oas,
             kubeApiUrl,

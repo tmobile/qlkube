@@ -1,7 +1,6 @@
 /* eslint-disable */
 const k8s = require('@kubernetes/client-node');
 const logger = require('pino')({ useLevelLabels: true });
-
 const kc = new k8s.KubeConfig();
 
 let watchMap = {};
@@ -107,13 +106,7 @@ function _setupWatch(
     };
 
     const returnedWatch = await setupWatch();
-
-    if (watchMap[clientIpAddress] && returnedWatch) {
-      let watchObjList = [...watchMap[clientIpAddress], returnedWatch];
-      watchMap[clientIpAddress] = watchObjList;
-    } else {
-      watchMap[clientIpAddress] = [returnedWatch];
-    }
+    setIpAddressWatchMap(clientIpAddress, returnedWatch)
   })(
     kind.toUpperCase(),
     url,
@@ -135,5 +128,20 @@ function disconnectWatchable(clientIp) {
   }
 }
 
+function setIpAddressWatchMap (clientIpAddress, cachedWatchable) {
+  if (watchMap[clientIpAddress] && cachedWatchable) {
+    let watchObjList = [...watchMap[clientIpAddress], cachedWatchable];
+    watchMap[clientIpAddress] = watchObjList;
+  } else {
+    watchMap[clientIpAddress] = [cachedWatchable];
+  }
+}
+
+function getWatchMap() {
+  return watchMap;
+}
+
 exports.setupWatch = setupWatch;
 exports.disconnectWatchable = disconnectWatchable;
+exports.setIpAddressWatchMap = setIpAddressWatchMap;
+exports.getWatchMap = getWatchMap;
