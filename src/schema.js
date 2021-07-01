@@ -42,6 +42,7 @@ const injectUrl = (path, namespace) => {
   }
   return path.length > 0 ? urlInject : '';
 };
+exports.injectUrl = injectUrl;
 
 exports.hasWatchExp = (path) => hasOuterWatch(path) || hasGetWatch(path);
 
