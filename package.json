@@ -22,7 +22,7 @@
   },
   "homepage": "https://github.com/qlkube/qlkube#readme",
   "dependencies": {
-    "@kubernetes/client-node": "^0.13.2",
+    "@kubernetes/client-node": "^0.15.0",
     "apollo-server": "^2.21.0",
     "apollo-server-express": "^2.9.7",
     "chai": "^4.3.4",

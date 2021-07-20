@@ -61,13 +61,14 @@ async function main() {
 
   const server = new ApolloServer({
     schema,
-    context: ({ req, connection }) => {
+    context: async({ req, connection }) => {
       if (connection) {
         return {
           ...bareContext,
           authorization: connection.context.authorization,
           clusterURL: connection.context.clusterURL,
-          ipAddress: connection.context.request.socket.remoteAddress,
+          clientId: connection.context.clientId,
+          subId: await watch.generateSubId(),
         };
       }
       const token = req.headers.authorization || '';
@@ -87,24 +88,29 @@ async function main() {
     subscriptions: {
       path: '/subscriptions',
       onConnect: async (connectionParams, webSocket, context) => {
-        const token = connectionParams.authToken || '';
-        const clusterURL = connectionParams.apiserverurl || '';
-        if (token === '') {
+
+        const token = connectionParams.authToken || null;
+        const clusterURL = connectionParams.apiserverurl || null;
+        const clientId = connectionParams.clientId || null;
+        if (!token) {
           throw new Error('Missing authorization header.');
         }
-        if (clusterURL === '') {
+        if (!clusterURL) {
           throw new Error('Missing apiserverurl header.');
+        }
+        if(!clientId){
+          throw new Error('Missing clientId header.');
         }
         return {
           ...context,
           authorization: token,
           clusterURL,
-          ipAddress: context.request.socket.remoteAddress,
+          subId: await watch.generateSubId(),
+          clientId
         };
       },
       onDisconnect: (webSocket, context) => {
-        logger.info('Client Disconnected');
-        watch.disconnectWatchable(context.request.socket.remoteAddress);
+        logger.info('Client Disconnected', context.request.socket.remoteAddress);
       },
     },
   });
