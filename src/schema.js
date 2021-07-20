@@ -218,21 +218,21 @@ function createSubscriptionSchema(
       const injectedUrl = injectUrl(focusedPath, namespace);
       pathUrl = injectedUrl;
     }
-    const ipAddr = context.ipAddress;
-
-    // k8Data will not change if path dosent require a namspace at all
+    const clientId = context.clientId;
+    const subId = context.subId;
     watch.setupWatch(
       k8Data,
       context.pubsub,
       context.authorization,
       context.clusterURL,
       namespace,
-      ipAddr,
-      pathUrl
+      pathUrl,
+      subId,
+      clientId
     );
-
     return withCancel(context.pubsub.asyncIterator(events), () => {
-      watch.disconnectWatchable(ipAddr)
+      logger.info('Disconnect client id', clientId)
+      watch.disconnectWatchable(clientId)
     });
   }
 
