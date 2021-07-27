@@ -49,5 +49,8 @@
     "eslint-plugin-import": "^2.23.3",
     "eslint-plugin-prettier": "^3.4.0",
     "prettier": "^2.3.0"
+  },
+  "config": {
+    "unsafe-perm": true
   }
 }
