@@ -143,7 +143,7 @@ async function oasToGraphQlSchema(oas, kubeApiUrl) {
     },
     headers: (method, path, title, resolverParams) => ({
       Authorization: `${resolverParams.context.authorization}`,
-      'Content-Type': 'application/merge-patch+json',
+      'Content-Type': method === 'patch' ? 'application/merge-patch+json' : 'application/json',
       'Accept': 'application/json, */*'
     }),
   });
