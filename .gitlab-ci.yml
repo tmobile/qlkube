@@ -27,7 +27,7 @@ unit-test:
     - npm --version
     - apt-get install -yq git openssh-client
     - mkdir -p -m 0600 ~/.ssh && ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
-    - ssh-agent sh -c 'echo $SSH_PRIVATE_KEY_BASE64 | base64 -d | ssh-add - ; npm install'
+    - ssh-agent sh -c 'echo $SSH_PRIVATE_KEY_BASE64 | base64 -d | ssh-add - ; npm install --unsafe-perm'
     - npm run test
 
 variables:
