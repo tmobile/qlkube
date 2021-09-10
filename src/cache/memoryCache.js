@@ -1,8 +1,8 @@
 var memoryCache = module.exports = function () {
     var cache = {
-        cid_sid_map:{},
-        sid_wtc_map:{},
-        ptclKey_sid_map:{}
+        clientId_subId_map:{},
+        subId_watchObj_map:{},
+        pathClientKey_subId_map:{}
     };
     return {
         get: function (key) { return cache[key]; },

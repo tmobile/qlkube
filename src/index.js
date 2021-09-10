@@ -43,7 +43,6 @@ async function main() {
   const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
   const subs = await getWatchables(oasWatchable);
   const oas = deleteWatchParameters(oasWatchable);
-
   const graphQlSchemaMap = await utilities.mapGraphQlDefaultPaths(oas);
   const k8PathKeys = Object.keys(oas.paths);
   const mappedK8Paths = utilities.mapK8ApiPaths(
