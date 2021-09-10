@@ -87,6 +87,9 @@ function setupWatch(
     };
   
     const publishEvent = (type, obj) => {
+      logger.info(
+        `watcher event:  ${type}, namespace: ${obj.metadata.namespace} name: ${obj.metadata.name}`
+      );
       pubsub.publish(type, { event: type, object: obj });
     };
   
