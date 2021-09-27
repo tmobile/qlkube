@@ -5,6 +5,8 @@ const logger = require('pino')({ useLevelLabels: true });
 const express = require('express');
 const http = require('http');
 const fs = require('fs').promises;
+const nodeFs = require('fs');
+
 const {
   createSchema,
   getWatchables,
@@ -14,7 +16,7 @@ const {
 const utilities = require('./utilities');
 const getOpenApiSpec = require('./oas');
 const watch = require('./watch');
-
+const path = require('path')
 // TODO: remove the need for this
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 
@@ -120,8 +122,13 @@ async function main() {
   }
   const app = express();
   app.use(cors());
+  var publicdir = path.join(__dirname, '../public/health.json');
   app.get('/health', (req, res) => {
-    res.status(200).send('ok');
+    try {
+      res.send(nodeFs.readFileSync(publicdir).toString());
+    } catch (error) {
+      res.status(500);
+    }
   });
 
   server.applyMiddleware({ app });
