@@ -11,17 +11,8 @@
     "test": "mocha test --timeout 30000",
     "coverage": "nyc --reporter=html mocha test --timeout 30000"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/qlkube/qlkube.git"
-  },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/qlkube/qlkube/issues"
-  },
-  "homepage": "https://github.com/qlkube/qlkube#readme",
   "dependencies": {
     "@kubernetes/client-node": "^0.15.0",
     "apollo-server": "^2.21.0",
