@@ -1,3 +1,10 @@
+### [0.0.3](https://gitlab.com/tmobile/conducktor/self-service/qlkube/compare/v0.0.2...v0.0.3) (2021-09-28)
+
+
+### Bug Fixes
+
+* Running in cluster mode in K8S deployment ([76c1e17](https://gitlab.com/tmobile/conducktor/self-service/qlkube/commit/76c1e178c05c2a4a235dc2f4b80c70e881bf5a08))
+
 ### [0.0.2](https://gitlab.com/tmobile/conducktor/self-service/qlkube/compare/v0.0.1...v0.0.2) (2021-09-28)
 
 
