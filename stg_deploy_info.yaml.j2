@@ -11,6 +11,7 @@ image:
   pullPolicy: Always
   pullSecrets:
     - name: gitlab-docker-registry-token
+
 container:
   multiPorts:
     - name: admin
@@ -20,6 +21,7 @@ container:
     path: /health
     scheme: HTTP
     portName: admin
+
 resources:
   requests:
     cpu: 0.1
@@ -27,15 +29,7 @@ resources:
   limits:
     cpu: 1
     memory: 1024Mi
-variables: null
-volumeMaps: null
-persistentVolumeClaims: null
-secrets: null
-secretMaps: null
-configMaps: null
-envFrom:
-  configMaps: []
-  secrets: ['qlkube-env-vars']
+
 ingress:
   enabled: true
   ingressType: HTTP
@@ -44,26 +38,13 @@ ingress:
   multiPaths:
     - path: /
       portName: admin
+
 tls:
   enabled: true
   secretName: "conducktor-certificate"
+
 autoscale:
   enabled: false
   minReplicas: 2
   maxReplicas: 5
   cpuAverageUtilization: 50
-telemetry:
-  enabled: false
-  path: /prometheus
-  port: "8080"
-  scheme: HTTP
-global:
-  ttl: 10d
-  expiresAt: ""
-annotations:
-  deployment:
-    swaggerUri: ""
-openTelemetry:
-  enabled: false
-  exporterOtlpEndpoint: ""
-  resourceAttributes: ""

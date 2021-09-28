@@ -62,7 +62,7 @@ async function main() {
 
   const server = new ApolloServer({
     schema,
-    context: async({ req, connection }) => {
+    context: async ({ req, connection }) => {
       if (connection) {
         return {
           ...bareContext,
@@ -99,7 +99,7 @@ async function main() {
         if (!clusterURL) {
           throw new Error('Missing apiserverurl header.');
         }
-        if(!clientId){
+        if (!clientId) {
           throw new Error('Missing clientId header.');
         }
         return {
@@ -122,13 +122,10 @@ async function main() {
   }
   const app = express();
   app.use(cors());
-  var publicdir = path.join(__dirname, '../public/health.json');
+  const versionJSON = nodeFs.readFileSync(path.join(__dirname, '../public/health.json')).toString();
   app.get('/health', (req, res) => {
-    try {
-      res.send(nodeFs.readFileSync(publicdir).toString());
-    } catch (error) {
-      res.status(500);
-    }
+    res.setHeader('Content-Type', 'application/json');
+    res.send(versionJSON);
   });
 
   server.applyMiddleware({ app });

@@ -15,6 +15,24 @@ qlkube ships with the Apollo GraphQL Playground, so you can play around with the
 
 ![Demo](docs/qlkube.gif)
 
+### Out of cluster - Running application in dev mode
+
+For playing around locally you can run qlkube from source outside of the cluster. To do this you must first proxy the Kubernetes
+api server to http://localhost:8001:
+
+```
+kubectl proxy
+```
+
+You can then run qlkube locally, which will connect to the proxied Kubernetes api:
+
+```
+npm run local
+```
+
+Navigate to http://localhost:4000/ in your browser - this will launch the GraphQL Playground which you can use to interact
+with the kubernetes api.
+
 ## Example Queries
 
 The 'all' resource is the easiest query type to use for querying kubernetes resources of all types (services, pods, deployments etc).
@@ -330,24 +348,6 @@ N.B. you need [skaffold](https://github.com/GoogleContainerTools/skaffold) insta
 ```
 skaffold dev
 kubectl port-forward svc/qlkube 8080:80
-```
-
-Navigate to http://localhost:8080/ in your browser - this will launch the GraphQL Playground which you can use to interact
-with the kubernetes api.
-
-### Out of cluster (dev mode)
-
-For playing around locally you can run qlkube from source outside of the cluster. To do this you must first proxy the Kubernetes
-api server to http://localhost:8001:
-
-```
-kubectl proxy
-```
-
-You can then run qlkube locally, which will connect to the proxied Kubernetes api:
-
-```
-npm run local
 ```
 
 Navigate to http://localhost:8080/ in your browser - this will launch the GraphQL Playground which you can use to interact
