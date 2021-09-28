@@ -1,23 +1,37 @@
 include:
-  - project: 'tmobile/templates'
+  - project: tmobile/templates
     ref: tmo/master
-    file: '/gitlab-ci/.tmo.global.common.gitlab-ci.yml'
-  - project: 'tmobile/templates'
+    file: /gitlab-ci/.tmo.global.common.gitlab-ci.yml
+
+  - project: tmobile/conducktor/self-service/go-pipeline
     ref: tmo/master
-    file: '/gitlab-ci/.tmo.function.docker.gitlab-ci.yml'
-  - project: "tmobile/templates"
-    ref: "tmo/master"
-    file: "gitlab-ci/.tmo.job.dockerScan.gitlab-ci.yml"
-  - project: "tmobile/templates"
+    file: /gitlab-ci/.duck.semantic-release-main.gitlab-ci.yml
+
+  - project: tmobile/conducktor/self-service/go-pipeline
     ref: tmo/master
-    file: "/gitlab-ci/.tmo.function.duck-deploy.gitlab-ci.yml"
+    file: /gitlab-ci/.init-env.gitlab-ci.yml
+
+  - project: tmobile/conducktor/self-service/go-pipeline
+    ref: tmo/master
+    file: /gitlab-ci/.docker-package.gitlab-ci.yml
+
+  - project: tmobile/conducktor/self-service/go-pipeline
+    ref: tmo/master
+    file: /gitlab-ci/.deploy.gitlab-ci.yml
 
 stages:
   - tmo
+  - build-prep
   - test
+  - build
   - package
-  - ci
+  - release
   - deploy
+  - triggers
+
+variables:
+  DOCKER_BUILD_ARGS: "--build-arg SSH_KEY=$SSH_PRIVATE_KEY_BASE64"
+  GIT_DEPTH: 1
 
 unit-test:
   stage: test
@@ -30,38 +44,11 @@ unit-test:
     - ssh-agent sh -c 'echo $SSH_PRIVATE_KEY_BASE64 | base64 -d | ssh-add - ; npm install --unsafe-perm'
     - npm run test
 
-variables:
-  ALLOW_SONAR_FAILURE: "true"
-  NODE_VERSION: "14.15.1"
-  GIT_DEPTH: 1
-
-docker_build:
-  stage: package
-  variables:
-    DOCKER_BUILD_ARGS: "--build-arg SSH_KEY=$SSH_PRIVATE_KEY_BASE64"
-  extends: .docker-package
-
-deploy_sbx:
-  stage: deploy
-  extends: .duck_deploy
-  variables:
-    CONDUCKTOR_CONFIG_PATH: ./sbx_deploy_info.yaml
-    CONDUCKTOR_NS: css-sbx-duck-dev-w2
-    CONDUCKTOR_TARGET: duck-dev-w2
-    DUCK_DEBUG: "true"
-  environment:
-    name: sbx
-  rules:
-    - if: $CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH
-
-deploy_dev:
-  stage: deploy
-  extends: .duck_deploy
-  variables:
-    CONDUCKTOR_CONFIG_PATH: ./dev_deploy_info.yaml
-    CONDUCKTOR_NS: css-dev-duck-dev-w2
-    CONDUCKTOR_TARGET: duck-dev-w2
-  environment:
-    name: dev
-  rules:
-    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+version-setup:
+  stage: build
+  image: $CI_REGISTRY/tmobile/conducktor/self-service/baseimages/duckwebbase:1.2.0
+  script:
+    - node version-setup.js $RELEASE_VERSION 
+  artifacts:
+    paths:
+    - ./public/
