@@ -2,14 +2,14 @@
 const { GraphQLString, GraphQLSchema, GraphQLObjectType } = require('graphql');
 const { mergeSchemas } = require('graphql-tools');
 const { createGraphQLSchema } = require('openapi-to-graphql');
-const logger = require('pino')({ useLevelLabels: true });
+const { logger } = require('./log');
 const watch = require('./watch');
 
 const customSubArgs = {
   'PodLogs': {
-      namespace: { type: GraphQLString },
-      name: {type: GraphQLString},
-      container: {type: GraphQLString}
+    namespace: { type: GraphQLString },
+    name: { type: GraphQLString },
+    container: { type: GraphQLString }
   }
 }
 const customBaseSchema = {
@@ -20,7 +20,7 @@ const customBaseSchema = {
       container: { type: GraphQLString },
       pod: { type: GraphQLString }
     }
-  }) 
+  })
 }
 const hasOuterWatch = (path) => {
   // check outer parameters of path
@@ -190,55 +190,55 @@ function createSubscriptionSchema(
 
   let ObjectEventType;
 
-  const _baseSchema = customBaseSchema[k8sType]?
+  const _baseSchema = customBaseSchema[k8sType] ?
     customBaseSchema[k8sType] :
     baseSchema.getType(schemaType);
-  
-    ObjectEventType = new GraphQLObjectType({
-      name: ObjectEventName,
-      fields: {
-        event: { type: GraphQLString },
-        object: { type: _baseSchema },
-      },
-    });
+
+  ObjectEventType = new GraphQLObjectType({
+    name: ObjectEventName,
+    fields: {
+      event: { type: GraphQLString },
+      object: { type: _baseSchema },
+    },
+  });
 
   const kind = k8sType.toUpperCase();
   const events = [`${kind}_MODIFIED`, `${kind}_ADDED`, `${kind}_DELETED`, `${kind}_LOGGER`];
 
   const withCancel = (asyncIterator, onCancel) => {
     const asyncReturn = asyncIterator.return;
-  
+
     asyncIterator.return = () => {
       onCancel();
       return asyncReturn ? asyncReturn.call(asyncIterator) : Promise.resolve({ value: undefined, done: true });
     };
-  
+
     return asyncIterator;
   };
-  
+
   function newSubscription(parent, args, context) {
-    const { namespace = null, name=null, container=null } = args;
+    const { namespace = null, name = null, container = null } = args;
     const pathIncludesRawNamespace = k8Data.k8sUrl.includes('{namespace}');
     let pathUrl = k8Data.k8sUrl;
 
-    if(
-      k8Data.k8sType === 'PodLogs'&&
-      namespace&&
-      name&&
+    if (
+      k8Data.k8sType === 'PodLogs' &&
+      namespace &&
+      name &&
       container
-    ){
+    ) {
       pathUrl = `/api/v1/namespaces/${namespace}/pods/${name}/log?tailLines=10&follow=true&container=${container}`;
       args['secondaryUrl'] = `/api/v1/namespaces/${namespace}/pods/${name}/log?tailLines=0&follow=true&container=${container}`
     } else if (namespace && pathIncludesRawNamespace) {
-      logger.info('Namespace Provided!', namespace);
+      logger.debug('Namespace Provided!', namespace);
       const focusedPath = k8Data.k8sUrl.split('/') || [];
       const injectedUrl = injectUrl(focusedPath, namespace);
       pathUrl = injectedUrl;
     } else if (!namespace && pathIncludesRawNamespace) {
-      logger.info('No namespace provided!');
+      logger.debug('No namespace provided!');
       pathUrl =
         watchableNonNamespacePaths[kind.toUpperCase()] &&
-        watchableNonNamespacePaths[kind.toUpperCase()][0]
+          watchableNonNamespacePaths[kind.toUpperCase()][0]
           ? watchableNonNamespacePaths[kind.toUpperCase()][0]
           : '';
     } else if (
@@ -246,7 +246,7 @@ function createSubscriptionSchema(
       !pathIncludesRawNamespace &&
       mappedNamespacedPaths[kind.toUpperCase()][0]
     ) {
-      logger.info('Namespace not provided and not not requested!');
+      logger.debug('Namespace not provided and not not requested!');
       const focusedPath =
         mappedNamespacedPaths[kind.toUpperCase()][0].split('/');
       const injectedUrl = injectUrl(focusedPath, namespace);
@@ -269,7 +269,7 @@ function createSubscriptionSchema(
       subArgs
     );
     return withCancel(context.pubsub.asyncIterator(events), () => {
-      logger.info('Disconnect client id', clientId)
+      logger.debug('Disconnect client id', clientId)
       watch.disconnectSpecificSocket(clientId, subId)
     });
   }
@@ -278,17 +278,17 @@ function createSubscriptionSchema(
 
   fields[ObjectEventName] = {
     type: ObjectEventType,
-    args: customSubArgs[k8sType] ? 
-    {
-      ...customSubArgs[k8sType] 
-    } :
-    {
-      namespace: { type: GraphQLString },
-    },
+    args: customSubArgs[k8sType] ?
+      {
+        ...customSubArgs[k8sType]
+      } :
+      {
+        namespace: { type: GraphQLString },
+      },
     resolve: (payload) => payload,
     subscribe: newSubscription,
   };
-  
+
 
 
   const subscriptionType = new GraphQLObjectType({
@@ -317,10 +317,10 @@ exports.createSchema = async (
 
   subscriptions.forEach((element) => {
     let ObjectEventName;
-    if(element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log'){
+    if (element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log') {
       element.k8sType = `${element.k8sType}Logs`
       ObjectEventName = `${element.k8sType}Event`;
-    }else{
+    } else {
       ObjectEventName = `${element.k8sType}Event`;
     }
     const includesNamespace = element.k8sUrl.includes('{namespace}');
