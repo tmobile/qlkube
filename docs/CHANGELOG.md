@@ -1,3 +1,10 @@
+### [0.0.4](https://gitlab.com/tmobile/conducktor/self-service/qlkube/compare/v0.0.3...v0.0.4) (2021-10-06)
+
+
+### Bug Fixes
+
+* Added log level ([929ddbf](https://gitlab.com/tmobile/conducktor/self-service/qlkube/commit/929ddbfeca8b9d497b1057686c5555c1200cd86e))
+
 ### [0.0.3](https://gitlab.com/tmobile/conducktor/self-service/qlkube/compare/v0.0.2...v0.0.3) (2021-09-28)
 
 
