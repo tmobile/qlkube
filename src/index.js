@@ -1,7 +1,7 @@
 const cors = require('cors');
 require('dotenv').config();
 const { ApolloServer, PubSub } = require('apollo-server-express');
-const logger = require('pino')({ useLevelLabels: true });
+const { logger } = require('./log');
 const express = require('express');
 const http = require('http');
 const fs = require('fs').promises;
