@@ -3,6 +3,7 @@ const { GraphQLString, GraphQLSchema, GraphQLObjectType } = require('graphql');
 const { mergeSchemas } = require('graphql-tools');
 const { createGraphQLSchema } = require('openapi-to-graphql');
 const { logger } = require('./log');
+const { getK8SCustomResolver } = require('./resolver/customresolver');
 const watch = require('./watch');
 
 const customSubArgs = {
@@ -149,6 +150,16 @@ async function oasToGraphQlSchema(oas, kubeApiUrl) {
   const { schema } = await createGraphQLSchema(oas, {
     baseUrl: kubeApiUrl,
     viewer: false,
+    customResolvers: {
+      Kubernetes: {
+        "/api/v1/namespaces/{namespace}/secrets/{name}": {
+          get: getK8SCustomResolver('/api/v1/namespaces/{namespace}/secrets/{name}', 'get')
+        },
+        "/api/v1/namespaces/{namespace}/configmaps/{name}": {
+          get: getK8SCustomResolver('/api/v1/namespaces/{namespace}/configmaps/{name}', 'get')
+        }
+      }
+    },
     requestOptions: (method, path, title, resolverParams) => {
       if (
         resolverParams &&
