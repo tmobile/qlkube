@@ -1,3 +1,10 @@
+### [0.0.5](https://gitlab.com/tmobile/conducktor/self-service/qlkube/compare/v0.0.4...v0.0.5) (2021-10-07)
+
+
+### Bug Fixes
+
+* Added Custom resolver for secrets and configmaps ([f4581e0](https://gitlab.com/tmobile/conducktor/self-service/qlkube/commit/f4581e0e1b414ff0d789dfc14ae221fec767d379))
+
 ### [0.0.4](https://gitlab.com/tmobile/conducktor/self-service/qlkube/compare/v0.0.3...v0.0.4) (2021-10-06)
 
 
