@@ -1,7 +1,7 @@
 /* eslint-disable */
-const Oas3Tools = require('openapi-to-graphql/lib/oas_3_tools');
-const preprocessor_1 = require('openapi-to-graphql/lib/preprocessor');
-const schema_builder_1 = require('openapi-to-graphql/lib/schema_builder');
+const Oas3Tools = require('../openapi-to-graphql/lib/oas_3_tools');
+const preprocessor_1 = require('../openapi-to-graphql/lib/preprocessor');
+const schema_builder_1 = require('../openapi-to-graphql/lib/schema_builder');
 const getDefaultGraphQlSchemaOptions = require('../model/schemaDefaultOptions');
 
 function mapGraphQlDefaultPaths(spec) {
@@ -12,6 +12,8 @@ function mapGraphQlDefaultPaths(spec) {
         resolve(translateOpenAPIToGraphQLREV([oas], options));
       })
       .catch((err) => {
+        console.log('err', err)
+
         return {
           error:{
             errorPayload:err

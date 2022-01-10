@@ -1,7 +1,7 @@
 /* eslint-disable */
 const { GraphQLString, GraphQLSchema, GraphQLObjectType } = require('graphql');
 const { mergeSchemas } = require('graphql-tools');
-const { createGraphQLSchema } = require('openapi-to-graphql');
+const { createGraphQLSchema } = require('../openapi-to-graphql');
 const { logger } = require('./log');
 const { getK8SCustomResolver } = require('./resolver/customresolver');
 const watch = require('./watch');
