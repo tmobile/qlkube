@@ -1,4 +1,5 @@
-# qlkube
+# qlkube ![example workflow](https://github.com/tmobile/qlkube/actions/workflows/main.yml/badge.svg)
+
 
 qlkube is a graphql api for kubernetes, allowing you to interact with all the features of the Kubernetes api using graphql.
 
