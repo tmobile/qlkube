@@ -1,0 +1,4 @@
+baseURL = 'https://www.qlkube.com/'
+languageCode = 'en-us'
+title = 'QLKube'
+theme = "docsy"
