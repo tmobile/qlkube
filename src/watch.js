@@ -6,6 +6,9 @@ const cache = require('./cache/memoryCache')();
 const https = require('https');
 const urlParse = url = require('url');
 
+var events = require('events');
+
+
 const clientId_subId_map = 'clientId_subId_map';
 const subId_watchObj_map = 'subId_watchObj_map';
 const pathClientKey_subId_map = 'pathClientKey_subId_map';
@@ -21,7 +24,7 @@ function setupWatch(
   clientId,
   args
 ) {
-
+  console.log('pathUrl---', pathUrl, clusterURL)
   if (subscription.k8sType === 'PodLogs') {
     logsWatch(
       subscription.k8sType,
@@ -68,6 +71,7 @@ const _setupWatch = async function (
   subId,
   clientId,
 ) {
+  const em = new events.EventEmitter();
 
   const authTokenSplit = authToken.split(' ');
   const token = authTokenSplit[authTokenSplit.length - 1];
@@ -78,9 +82,14 @@ const _setupWatch = async function (
     contexts: [{ name: namespace, token }],
     currentContext: namespace,
   });
+  console.log('clusterURL', clusterURL)
+  console.log('token', token)
+  console.log('namespace', namespace)
+  console.log('clusterURL', clusterURL)
   const watch = new k8s.Watch(kc);
 
   const watchCallback = (type, obj, data) => {
+    console.log('watchCallback.....', type)
     if (['ADDED', 'MODIFIED', 'DELETED'].includes(type)) {
       publishEvent(`${upperKind}_${type}`, obj);
     }
@@ -90,6 +99,8 @@ const _setupWatch = async function (
     logger.debug(
       `watcher event:  ${type}, namespace: ${obj.metadata.namespace} name: ${obj.metadata.name}`
     );
+    // em.emit(pubsub, obj);
+
     pubsub.publish(type, { event: type, object: obj });
   };
 
@@ -190,10 +201,14 @@ const logsWatch = async function (
           logWatch();
         }
       }
-
+      console.log('logWatchUrl', logWatchUrl)
       const opts = urlParse.parse(logWatchUrl)
+      // console.log('opts', opts)
+      const authTokenSplit = authToken.split(' ');
+      const token = authTokenSplit[authTokenSplit.length - 1];
+
       opts.headers = {};
-      opts.headers['Authorization'] = authToken;
+      opts.headers['Authorization'] = token;
       opts.headers['Content-Type'] = 'application/json';
       opts['timeout'] = 500000;
 
@@ -230,7 +245,7 @@ const logsWatch = async function (
     };
 
     const publishEvent = (type, obj) => {
-      pubsub.publish(type, { object: { log: obj, container: args.container, pod: args.name } });
+      // pubsub.publish(type, { object: { log: obj, container: args.container, pod: args.name } });
     };
 
     await logWatch();

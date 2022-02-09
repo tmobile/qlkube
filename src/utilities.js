@@ -12,13 +12,13 @@ function mapGraphQlDefaultPaths(spec) {
         resolve(translateOpenAPIToGraphQLREV([oas], options));
       })
       .catch((err) => {
-        console.log('err', err)
+        console.log('err wowwww', err)
 
-        return {
+        resolve( {
           error:{
             errorPayload:err
           }
-        }
+        })
       });
   });
 }
