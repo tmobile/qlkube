@@ -188,6 +188,7 @@ const logsWatch = async function (
     let upperKind = kind.toUpperCase();
     let logWatchUrl = `${clusterURL}${url}`
     let innerLogWatch;
+    console.log('logWatchUrl', logWatchUrl, clusterURL, url)
 
     const logWatch = async () => {
 
@@ -201,14 +202,14 @@ const logsWatch = async function (
           logWatch();
         }
       }
-      console.log('logWatchUrl', logWatchUrl)
+      // console.log('logWatchUrl', logWatchUrl)
       const opts = urlParse.parse(logWatchUrl)
       // console.log('opts', opts)
-      const authTokenSplit = authToken.split(' ');
-      const token = authTokenSplit[authTokenSplit.length - 1];
+      // const authTokenSplit = authToken.split(' ');
+      // const token = authTokenSplit[authTokenSplit.length - 1];
 
       opts.headers = {};
-      opts.headers['Authorization'] = token;
+      opts.headers['Authorization'] = authToken;
       opts.headers['Content-Type'] = 'application/json';
       opts['timeout'] = 500000;
 
@@ -235,6 +236,7 @@ const logsWatch = async function (
         cache.get(clientId_subId_map)[clientId] &&
         cache.get(clientId_subId_map)[clientId].includes(subId)
       ) {
+        console.log('logString', logString)
         publishEvent(`${upperKind}_LOGGER`, logString);
       } else {
         if (innerLogWatch !== null) {
