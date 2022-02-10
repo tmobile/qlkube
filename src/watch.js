@@ -24,7 +24,6 @@ function setupWatch(
   clientId,
   args
 ) {
-  console.log('pathUrl---', pathUrl, clusterURL)
   if (subscription.k8sType === 'PodLogs') {
     logsWatch(
       subscription.k8sType,
@@ -82,14 +81,9 @@ const _setupWatch = async function (
     contexts: [{ name: namespace, token }],
     currentContext: namespace,
   });
-  console.log('clusterURL', clusterURL)
-  console.log('token', token)
-  console.log('namespace', namespace)
-  console.log('clusterURL', clusterURL)
   const watch = new k8s.Watch(kc);
 
   const watchCallback = (type, obj, data) => {
-    console.log('watchCallback.....', type)
     if (['ADDED', 'MODIFIED', 'DELETED'].includes(type)) {
       publishEvent(`${upperKind}_${type}`, obj);
     }
@@ -99,8 +93,6 @@ const _setupWatch = async function (
     logger.debug(
       `watcher event:  ${type}, namespace: ${obj.metadata.namespace} name: ${obj.metadata.name}`
     );
-    // em.emit(pubsub, obj);
-
     pubsub.publish(type, { event: type, object: obj });
   };
 
@@ -188,7 +180,6 @@ const logsWatch = async function (
     let upperKind = kind.toUpperCase();
     let logWatchUrl = `${clusterURL}${url}`
     let innerLogWatch;
-    console.log('logWatchUrl', logWatchUrl, clusterURL, url)
 
     const logWatch = async () => {
 
@@ -198,15 +189,13 @@ const logsWatch = async function (
           cache.get(clientId_subId_map)[clientId].includes(subId) &&
           innerLogWatch === null
         ) {
-          logWatchUrl = `${clusterURL}${args.secondaryUrl}`
+          logWatchUrl = args.secondaryUrl ? `${clusterURL}${args.secondaryUrl}`
+            : `${clusterURL}${url}`;
+
           logWatch();
         }
       }
-      // console.log('logWatchUrl', logWatchUrl)
       const opts = urlParse.parse(logWatchUrl)
-      // console.log('opts', opts)
-      // const authTokenSplit = authToken.split(' ');
-      // const token = authTokenSplit[authTokenSplit.length - 1];
 
       opts.headers = {};
       opts.headers['Authorization'] = authToken;
@@ -232,11 +221,11 @@ const logsWatch = async function (
     };
 
     const watchCallback = (logString) => {
+      logger.debug('logString', logString)
       if (
         cache.get(clientId_subId_map)[clientId] &&
         cache.get(clientId_subId_map)[clientId].includes(subId)
       ) {
-        console.log('logString', logString)
         publishEvent(`${upperKind}_LOGGER`, logString);
       } else {
         if (innerLogWatch !== null) {
@@ -247,7 +236,7 @@ const logsWatch = async function (
     };
 
     const publishEvent = (type, obj) => {
-      // pubsub.publish(type, { object: { log: obj, container: args.container, pod: args.name } });
+      pubsub.publish(type, { object: { log: obj, container: args.container, pod: args.name } });
     };
 
     await logWatch();

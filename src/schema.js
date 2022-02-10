@@ -275,19 +275,6 @@ function createSubscriptionSchema(
     const subArgs = args;
     const emitterId = context.emitterId;
     const pubsub = context.pubsub;
-    // console.log('out2!! CHECKKKKK',
-    // // k8Data,
-    //   // context.pubsub,
-    //   // null,
-    //   context,
-    //   // context.clusterURL,
-    //   // namespace,
-    //   // pathUrl,
-    //   // subId,
-    //   // clientId,
-    //   // subArgs
-    // )
-    console.log('context.clusterUrl', context.clusterUrl)
 
     watch.setupWatch(
       k8Data,
