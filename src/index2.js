@@ -23,7 +23,7 @@ const wss = new WebSocketServer({ server: wsServer });
 const { useServer }  = require('graphql-ws/lib/use/ws');
 const { createClient } = require('graphql-ws');
 const bodyParser = require('body-parser');
-var events = require('events').EventEmitter.defaultMaxListeners = 100;;
+var events = require('events');
 const Crypto = require('crypto');
 var process = require('process')
 const pubsub = new PubSub();
@@ -117,11 +117,11 @@ wss.on('connection', function connection(ws) {
       // SUBSCRIPTION REQUEST
       if(requestType === requestTypeEnum.subscribe){
         ws.clientId= clientId;
-        logger.debug('Internal ws subscribe request from', connectionParams.clientId)
+        logger.debug('Internal ws subscribe request from', connectionParams.clientId);
+
         if(
           connectionParams?.clusterUrl&&
           clientId&&
-          emitterId&&
           connectionParams?.authorization&&
           query
         ){  
@@ -146,6 +146,7 @@ wss.on('connection', function connection(ws) {
         destroySpeifiedInternalWebsocket(connectionParams.clientSubId, connectionParams.clientId);
       }
     } catch (error) {
+      logger.error('Ws handler error', error)
       return {
         error: {
           errorPayload: error
@@ -234,6 +235,7 @@ const gqlServerRouter = async(
       logger.debug('Server generation failed....', clusterUrl)
     }
   }
+  console.log('??????')
 
   const gqlServerData= serverCache.getServer(clusterUrl);
   // SERVER FOR CLUSTER EXISTS
@@ -293,10 +295,15 @@ const gqlServerRouter = async(
 const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
   logger.debug('Generating cluster schema', kubeApiUrl)
   const oasRaw = await getOpenApiSpec(kubeApiUrl, schemaToken);
+  console.log('Generate Schema 1')
   const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
+  console.log('Generate Schema 2')
   const subs = await getWatchables(oasWatchable);
+  console.log('Generate Schema 3')
   const oas = deleteWatchParameters(oasWatchable);
+  console.log('Generate Schema 4')
   const graphQlSchemaMap = await utilities.mapGraphQlDefaultPaths(oas);
+  console.log('Generate Schema 5');
   if(graphQlSchemaMap.error){
     // proabably an invalid zuth token
     return graphQlSchemaMap;
