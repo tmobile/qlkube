@@ -337,6 +337,7 @@ exports.createSchema = async (
 
   subscriptions.forEach((element) => {
     let ObjectEventName;
+    // console.log('element.k8sUrl', element.k8sUrl)
     if (element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log') {
       element.k8sType = `${element.k8sType}Logs`
       ObjectEventName = `${element.k8sType}Event`;

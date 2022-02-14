@@ -1,5 +1,5 @@
 const gqlPortRange={
-    max:1113,
+    max:1111,
     min:1111
 }
 

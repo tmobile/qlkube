@@ -48,17 +48,18 @@ app.get('/gql', async(req, res) => {
   if(req?.headers?.connectionparams){
     const queryParams= JSON.parse(req?.headers?.connectionparams);
     const { query, authorization, clusterUrl }= queryParams;
+    const queryResponse= await gqlServerRouter(
+      null,
+      clusterUrl,
+      null,
+      null,
+      authorization,
+      query,
+      queryParams,
+      requestTypeEnum.query
+    ) 
     res.send({
-      data : await gqlServerRouter(
-        null,
-        clusterUrl,
-        null,
-        null,
-        authorization,
-        query,
-        queryParams,
-        requestTypeEnum.query
-      ) 
+      data : queryResponse
     })
   }
 });
@@ -74,9 +75,10 @@ setInterval(() => {
   console.log('internalSubObjMap', internalSubObjMap)
   console.log('clientToInternalSubIdMap', clientToInternalSubIdMap)
   console.log('clientInternalWsMap', clientInternalWsMap)
+  console.log('portQueue', serverCache.portQueue)
   console.log('MEM_USAGE', process.memoryUsage().heapTotal/1000000)
   checkServerConnections()
-}, 10000) 
+}, 5000) 
 
 // Use this to update server timestamps for last use
 // If there are any connected sockets
@@ -215,14 +217,16 @@ const gqlServerRouter = async(
   connectionParams,
   requestMode
 ) => {
+  console.log('--------gqlServerRouter----------')
   const genServerHandler = async(freePort) => {
     logger.debug('Generating server for', clusterUrl)
     const { serverUrl, serverObj, error }= await generateGqlServer(freePort, clusterUrl, token);
     if(!error){
       serverCache.cacheServer(null, clusterUrl, serverUrl, freePort, serverObj);
+      serverCache.movePortUsed(freePort);
+
       if(requestMode === requestTypeEnum.subscribe){
         const emitter = connectSub(serverUrl, emitterId, clientId, query, connectionParams);
-        serverCache.movePortUsed(freePort);
         emitter.on(emitterId, data => {
           ws.send(JSON.stringify(data))
         });
@@ -269,6 +273,7 @@ const gqlServerRouter = async(
       const queryResponse = await genServerHandler(freePort);
       logger.debug('genServerHandler respnse!!!', queryResponse)
       if(requestMode === requestTypeEnum.query){
+        logger.debug('returning query....')
         return queryResponse;
       }
     }
@@ -277,7 +282,7 @@ const gqlServerRouter = async(
     else{
       logger.debug('Port is unavailable, recle port')
       await serverCache.recycleServer();
-      gqlServerRouter(
+      return await gqlServerRouter(
         emitterId, 
         clusterUrl, 
         clientId, 
@@ -302,7 +307,7 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
   console.log('Generate Schema 3')
   const oas = deleteWatchParameters(oasWatchable);
   console.log('Generate Schema 4')
-  const graphQlSchemaMap = await utilities.mapGraphQlDefaultPaths(oas);
+  const graphQlSchemaMap = await utilities.mapGraphQlDefaultPaths(oas);// takes a while
   console.log('Generate Schema 5');
   if(graphQlSchemaMap.error){
     // proabably an invalid zuth token
@@ -314,13 +319,15 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
     k8PathKeys,
     graphQlSchemaMap
   );
+  console.log('Generate Schema 6')
   const schema = await createSchema(
     oas,
     kubeApiUrl,
     mappedK8Paths,
     subs.mappedWatchPath,
     subs.mappedNamespacedPaths
-  );
+  ); // takes the longest
+  console.log('Generate Schema 7')
   return schema;
 }
 
@@ -331,6 +338,7 @@ const generateGqlServer = async(port, kubeApiUrl, schemaToken) => {
   const token = authTokenSplit[authTokenSplit.length - 1];
   const newSchema = await generateClusterSchema(kubeApiUrl, token);
   if(newSchema.error){
+    logger.debug('generateGqlServer error....')
     return newSchema;
   }else{
     let wsserver = await new WebSocketServer({
@@ -357,6 +365,7 @@ const generateGqlServer = async(port, kubeApiUrl, schemaToken) => {
         }
       }
     }, wsserver);
+    console.log('generateGqlServer return 2 .....')
     return {
       serverUrl: `ws://localhost:${port}/gql`,
       serverObj: wsserver

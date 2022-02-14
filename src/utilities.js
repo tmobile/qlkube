@@ -54,6 +54,7 @@ function translateOpenAPIToGraphQLREV(oass, options) {
   const data = preprocessor_1.preprocessOas(oass, options);
   let schemaTypeMap = {};
   Object.entries(data.operations).forEach(([operationId, operation]) => {
+    // console.log(operation.responseDefinition?.targetGraphQLType)
     const field = schema_builder_1.getGraphQLType({
       def: operation.responseDefinition,
       data,
