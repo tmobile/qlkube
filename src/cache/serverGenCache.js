@@ -69,5 +69,15 @@ var serverCache = module.exports ={
       serverObject.close(() => {
         return true
       })
+    },
+    refreshServerUsage: function(serverkey) {
+        const refServerObj= this.servers?.[serverkey]?.serverObj;
+        const refreshedServerData= {
+            ...this.servers?.[serverkey],
+            lastUsed: new Date().toUTCString(),
+            serverObj: refServerObj
+        }
+        this.servers[serverkey]= refreshedServerData;
+        console.log('update usage', serverkey, refreshedServerData.lastUsed)
     }
   }

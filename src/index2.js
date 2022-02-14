@@ -71,7 +71,8 @@ const requestTypeEnum={
 };
 
 setInterval(() => {
-  console.log('Servers', Object.keys(serverCache.servers))
+  // console.log('Servers', Object.keys(serverCache.servers))
+  console.log('Servers', serverCache.servers)
   console.log('internalSubObjMap', internalSubObjMap)
   console.log('clientToInternalSubIdMap', clientToInternalSubIdMap)
   console.log('clientInternalWsMap', clientInternalWsMap)
@@ -90,12 +91,15 @@ setInterval(() => {
 // Use this to update server timestamps for last use
 // If there are any connected sockets
 const checkServerConnections = () => {
-  for(let serverName of Object.keys(serverCache?.servers)){
+  for(let clusterUrl of Object.keys(serverCache?.servers)){
     let socketCount=0;
-    serverCache.servers[serverName]?.serverObj?.clients?.forEach((socket) => {
+    serverCache.servers[clusterUrl]?.serverObj?.clients?.forEach((socket) => {
       socketCount++;
-    })
-    console.log('SERVER---', serverName, socketCount);
+    });
+    if(socketCount > 0){
+      serverCache.refreshServerUsage(clusterUrl)
+    }
+    console.log('SERVER---', clusterUrl, socketCount);
   }
 }
 
@@ -265,6 +269,7 @@ const gqlServerRouter = async(
     // QUERY
     else{
       const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams);
+      serverCache.refreshServerUsage(clusterUrl)
       return queryResponse;
     }
   }
