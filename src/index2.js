@@ -80,6 +80,13 @@ setInterval(() => {
   checkServerConnections()
 }, 5000) 
 
+
+
+// ## recycle logic 
+// ## 1: servers without sockets and latest time
+// ## 2: servers without sockets
+// ## if neither, send error?
+// ------------------------------------------------------
 // Use this to update server timestamps for last use
 // If there are any connected sockets
 const checkServerConnections = () => {
