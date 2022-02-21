@@ -70,84 +70,90 @@ const _setupWatch = async function (
   subId,
   clientId,
 ) {
-  const em = new events.EventEmitter();
+  try {
+    const em = new events.EventEmitter();
 
-  const authTokenSplit = authToken.split(' ');
-  const token = authTokenSplit[authTokenSplit.length - 1];
+    const authTokenSplit = authToken.split(' ');
+    const token = authTokenSplit[authTokenSplit.length - 1];
 
-  kc.loadFromOptions({
-    clusters: [{ server: clusterURL }],
-    users: [{ token: token }],
-    contexts: [{ name: namespace, token }],
-    currentContext: namespace,
-  });
-  const watch = new k8s.Watch(kc);
+    kc.loadFromOptions({
+      clusters: [{ server: clusterURL }],
+      users: [{ token: token }],
+      contexts: [{ name: namespace, token }],
+      currentContext: namespace,
+    });
+    const watch = new k8s.Watch(kc);
 
-  const watchCallback = (type, obj, data) => {
-    if (['ADDED', 'MODIFIED', 'DELETED'].includes(type)) {
-      publishEvent(`${upperKind}_${type}`, obj);
-    }
-  };
-
-  const publishEvent = (type, obj) => {
-    logger.debug(
-      `watcher event:  ${type}, namespace: ${obj.metadata.namespace} name: ${obj.metadata.name}`
-    );
-    pubsub.publish(type, { event: type, object: obj });
-  };
-
-
-  let timerId;
-
-  const watchDone = (err) => {
-    logger.debug('watch done', err, subId, clientId, url);
-
-    if (timerId != null) { clearTimeout(timerId); }
-    timerId = setTimeout(async () => {
-
-      if (
-        cache.get(clientId_subId_map)[clientId] &&
-        cache.get(clientId_subId_map)[clientId].includes(subId)
-      ) {
-        setupWatch();
+    const watchCallback = (type, obj, data) => {
+      if (['ADDED', 'MODIFIED', 'DELETED'].includes(type)) {
+        publishEvent(`${upperKind}_${type}`, obj);
       }
-    }, 5000);
-  };
+    };
 
-  const watchError = (err) => {
-    logger.error('watch err!', err.message);
-  };
+    const publishEvent = (type, obj) => {
+      // logger.debug(
+      //   `watcher event:  ${type}, namespace: ${obj.metadata.namespace} name: ${obj.metadata.name}`
+      // );
+      pubsub.publish(type, { event: type, object: obj });
+    };
 
-  const queryParams = {
-    allowWatchBookmarks: true,
-    forever: false,
-    timeout: 10000,
-  };
 
-  const setupWatch = async () => {
-    return await watch
-      .watch(
-        url,
-        queryParams,
-        watchCallback,
-        (err) => watchDone(err)
-        ,
-        watchError
-      )
-      .then((req) => {
-        logger.debug('watch request: ', url, subId, clientId);
-        return req;
-      })
-      .catch((err) => {
-        logger.error('watch error: ', err.message);
-      });
-  };
+    let timerId;
 
-  let upperKind = kind.toUpperCase();
-  mapSubIdToClientId(clientId, subId);
-  const returnedWatch = await setupWatch()
-  mapWatchToSubId(subId, returnedWatch);
-  mapPathClientKeyToSubId(url, clientId, subId);
+    const watchDone = (err) => {
+      logger.debug('watch done', err, subId, clientId, url);
+
+      if (timerId != null) { clearTimeout(timerId); }
+      timerId = setTimeout(async () => {
+
+        if (
+          cache.get(clientId_subId_map)[clientId] &&
+          cache.get(clientId_subId_map)[clientId].includes(subId)
+        ) {
+          setupWatch();
+        }
+      }, 5000);
+    };
+
+    const watchError = (err) => {
+      logger.error('watch err!', err.message);
+    };
+
+    const queryParams = {
+      allowWatchBookmarks: true,
+      forever: false,
+      timeout: 10000,
+    };
+
+    
+    const setupWatch = async () => {
+      return await watch
+        .watch(
+          url,
+          queryParams,
+          watchCallback,
+          (err) => watchDone(err)
+          ,
+          watchError
+        )
+        .then((req) => {
+          logger.debug('watch request: ', url, subId, clientId);
+          return req;
+        })
+        .catch((err) => {
+          logger.error('watch error: ', err.message);
+        });
+    };
+
+    let upperKind = kind.toUpperCase();
+    mapSubIdToClientId(clientId, subId);
+    const returnedWatch = await setupWatch()
+    mapWatchToSubId(subId, returnedWatch);
+    mapPathClientKeyToSubId(url, clientId, subId);
+  } catch (error) {
+    console.log('error', error)
+  }
+  
 }
 
 /**
@@ -221,7 +227,7 @@ const logsWatch = async function (
     };
 
     const watchCallback = (logString) => {
-      logger.debug('logString', logString)
+      // logger.debug('logString', logString)
       if (
         cache.get(clientId_subId_map)[clientId] &&
         cache.get(clientId_subId_map)[clientId].includes(subId)

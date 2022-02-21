@@ -141,8 +141,10 @@ function preprocessOas(oass, options) {
         });
         // Do not overwrite preexisting security schemes
         data.security = Object.assign(Object.assign({}, currentSecurity), data.security);
+        let item=0;
         // Process all operations
         for (let path in oas.paths) {
+            // console.log('processing', path, item++)
             const pathItem = !('$ref' in oas.paths[path])
                 ? oas.paths[path]
                 : Oas3Tools.resolveRef(oas.paths[path]['$ref'], oas);

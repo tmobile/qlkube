@@ -229,7 +229,6 @@ function createSubscriptionSchema(
 
   // function newSubscription(parent, args, context) {
   function newSubscription(parent, args, context) {
-    console.log('newSub!', args)
       const { namespace = null, name = null, container = null } = args;
     const pathIncludesRawNamespace = k8Data.k8sUrl.includes('{namespace}');
     let pathUrl = k8Data.k8sUrl;
@@ -243,12 +242,12 @@ function createSubscriptionSchema(
       pathUrl = `/api/v1/namespaces/${namespace}/pods/${name}/log?tailLines=10&follow=true&container=${container}`;
       args['secondaryUrl'] = `/api/v1/namespaces/${namespace}/pods/${name}/log?tailLines=0&follow=true&container=${container}`
     } else if (namespace && pathIncludesRawNamespace) {
-      logger.debug('Namespace Provided!', namespace);
+      // logger.debug('Namespace Provided!', namespace);
       const focusedPath = k8Data.k8sUrl.split('/') || [];
       const injectedUrl = injectUrl(focusedPath, namespace);
       pathUrl = injectedUrl;
     } else if (!namespace && pathIncludesRawNamespace) {
-      logger.debug('No namespace provided!');
+      // logger.debug('No namespace provided!');
       pathUrl =
         watchableNonNamespacePaths[kind.toUpperCase()] &&
           watchableNonNamespacePaths[kind.toUpperCase()][0]
@@ -259,7 +258,7 @@ function createSubscriptionSchema(
       !pathIncludesRawNamespace &&
       mappedNamespacedPaths[kind.toUpperCase()][0]
     ) {
-      logger.debug('Namespace not provided and not not requested!');
+      // logger.debug('Namespace not provided and not not requested!');
       const focusedPath =
         mappedNamespacedPaths[kind.toUpperCase()][0].split('/');
       const injectedUrl = injectUrl(focusedPath, namespace);

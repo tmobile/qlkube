@@ -1,5 +1,5 @@
 const gqlPortRange={
-    max:1111,
+    max:1115,
     min:1111
 }
 
@@ -59,7 +59,7 @@ var serverCache = module.exports ={
         serverObj
       }
       this.servers[clusterUrl]= newServer;
-      console.log('New Cached Server', port, clusterUrl);
+      // console.log('New Cached Server', port, clusterUrl);
     },
     destroyServer: (serverObject) => {
       serverObject.close()

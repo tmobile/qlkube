@@ -43,6 +43,14 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+let currentGeneratingServers= {};
+let connectQueue= {};
+
+// Print servers and their sockets
+app.get('/stats', async(req, res) => {
+  checkServerConnections();
+});
+
 // GQL QUERIES
 app.get('/gql', async(req, res) => {
   if(req?.headers?.connectionparams){
@@ -71,14 +79,18 @@ const requestTypeEnum={
 };
 
 setInterval(() => {
+  // console.log(' ')
+  // console.log(' ')
+  // console.log(' ')
+
   // console.log('Servers', Object.keys(serverCache.servers))
-  console.log('Servers', serverCache.servers)
-  console.log('internalSubObjMap', internalSubObjMap)
-  console.log('clientToInternalSubIdMap', clientToInternalSubIdMap)
-  console.log('clientInternalWsMap', clientInternalWsMap)
-  console.log('portQueue', serverCache.portQueue)
-  console.log('MEM_USAGE', process.memoryUsage().heapTotal/1000000)
-  checkServerConnections()
+  // // console.log('Servers', serverCache.servers)
+  // console.log('internalSubObjMap', internalSubObjMap)
+  // console.log('clientToInternalSubIdMap', clientToInternalSubIdMap)
+  // console.log('clientInternalWsMap', clientInternalWsMap)
+  // console.log('portQueue', serverCache.portQueue)
+  // console.log('MEM_USAGE', process.memoryUsage().heapTotal/1000000)
+  // checkServerConnections()
 }, 5000) 
 
 
@@ -126,11 +138,12 @@ wss.on('connection', function connection(ws) {
     try {
       const connectionMessage= JSON.parse(data);
       const { requestType, clientId, query, connectionParams }= connectionMessage;
+      console.log('Recieve Message For', clientId)
 
       // SUBSCRIPTION REQUEST
       if(requestType === requestTypeEnum.subscribe){
         ws.clientId= clientId;
-        logger.debug('Internal ws subscribe request from', connectionParams.clientId);
+        // logger.debug('Internal ws subscribe request from', connectionParams.clientId);
 
         if(
           connectionParams?.clusterUrl&&
@@ -183,12 +196,13 @@ wss.on('connection', function connection(ws) {
       }
     }
   });
-  logger.debug('New meta websocket')
+
+  logger.debug('New meta websocket', )
 });
 
 // ENDS SPECIFIC INTERNAL SUB FOR CLIENT
 const destroySpeifiedInternalWebsocket = (clientSubId, clientId) => {
-  logger.debug('Closing internal ws', clientSubId)
+  console.log('Closing internal ws', clientSubId)
   const internalSocketId= clientToInternalSubIdMap[clientSubId];
   const internalSubObj = internalSubObjMap[internalSocketId];
   internalSubObj.dispose();
@@ -228,19 +242,18 @@ const gqlServerRouter = async(
   connectionParams,
   requestMode
 ) => {
-  console.log('--------gqlServerRouter----------')
+  
   const genServerHandler = async(freePort) => {
-    logger.debug('Generating server for', clusterUrl)
+    // logger.debug('Generating server for', clusterUrl)
     const { serverUrl, serverObj, error }= await generateGqlServer(freePort, clusterUrl, token);
     if(!error){
       serverCache.cacheServer(null, clusterUrl, serverUrl, freePort, serverObj);
       serverCache.movePortUsed(freePort);
 
       if(requestMode === requestTypeEnum.subscribe){
-        const emitter = connectSub(serverUrl, emitterId, clientId, query, connectionParams);
-        emitter.on(emitterId, data => {
-          ws.send(JSON.stringify(data))
-        });
+        console.log('COnnecting sub for', connectionParams.clientSubId);
+        sendServerGenerationMessage(ws, 'end-generate')
+        setupSub(serverUrl, emitterId, clientId, query, connectionParams, ws)
       }else{
         const queryResponse= await connectQuery(serverUrl, query, connectionParams);
         return queryResponse;
@@ -250,20 +263,16 @@ const gqlServerRouter = async(
       logger.debug('Server generation failed....', clusterUrl)
     }
   }
-  console.log('??????')
 
   const gqlServerData= serverCache.getServer(clusterUrl);
-  // SERVER FOR CLUSTER EXISTS
+  // SERVER FOR CLUSTER EXISTS -> CONNECT
   if(gqlServerData){
     const { gqlServerUrl, gqlServerClient }= gqlServerData;
     logger.debug('Found existing server for', clusterUrl);
 
     // SUBSCRIPTION
     if(requestMode === requestTypeEnum.subscribe){
-      const emitter = connectSub(gqlServerUrl, emitterId, clientId, query, connectionParams);
-      emitter.on(emitterId, data => {
-        ws.send(JSON.stringify(data))
-      });
+      setupSub(gqlServerUrl, emitterId, clientId, query, connectionParams, ws)
     }
 
     // QUERY
@@ -276,23 +285,53 @@ const gqlServerRouter = async(
 
   // SERVER DOSENT EXIST -> GENERATE
   else{
-    logger.debug('Check if ports are available....', serverCache.portQueue);
+    // logger.debug('Check if ports are available....', serverCache.portQueue);
     const freePort= serverCache.getPort();
+    sendServerGenerationMessage(ws, 'start-generate')
+    //IF SERVER IS ALREADY BENING GENERATED
+    if(currentGeneratingServers[clusterUrl]){
+      console.log('Server is being created', connectionParams.clientSubId)
+      connectQueue[clusterUrl] ? 
+      connectQueue[clusterUrl].push(
+        {
+          clusterUrl: connectionParams.clusterUrl, 
+          emitterId, 
+          clientId, 
+          query, 
+          connectionParams,
+          ws
+        }
+      ) :
+      connectQueue[clusterUrl]= 
+      [
+        {
+          clusterUrl: connectionParams.clusterUrl, 
+          emitterId, 
+          clientId, 
+          query, 
+          connectionParams,
+          ws
+        }
+      ]
+      console.log('connectQueue[clusterUrl]', connectQueue[clusterUrl]?.length)
+      // connectQueue= newConnectionQueue;
+      return;
+    }
 
-    // FREE PORT -> CREWATE SERVER AT PORT
+    // FREE PORT -> CREATE SERVER AT PORT
     if(freePort){
-      logger.debug('Port is available', freePort)
+      // logger.debug('Port is available', freePort)
       const queryResponse = await genServerHandler(freePort);
-      logger.debug('genServerHandler respnse!!!', queryResponse)
+      // logger.debug('genServerHandler respnse!!!', queryResponse)
       if(requestMode === requestTypeEnum.query){
-        logger.debug('returning query....')
+        // logger.debug('returning query....')
         return queryResponse;
       }
     }
 
     // NO FREE PORTS -> RECYCLE SERVER
     else{
-      logger.debug('Port is unavailable, recle port')
+      // logger.debug('Port is unavailable, recle port')
       await serverCache.recycleServer();
       return await gqlServerRouter(
         emitterId, 
@@ -308,19 +347,52 @@ const gqlServerRouter = async(
   }
 }
 
+const sendServerGenerationMessage = (focusedWs, messageType) => {
+  messageType === 'start-generate'&&focusedWs?.send(JSON.stringify(
+    {
+      status: 'generating'
+    }
+  ))
+  messageType === 'end-generate'&&focusedWs?.send(JSON.stringify(
+    {
+      status: 'complete'
+    }
+  ))
+}
+
+const setupSub = (gqlServerUrl, emitterId, clientId, query, connectionParams, ws) => {
+  const emitter = connectSub(gqlServerUrl, emitterId, clientId, query, connectionParams);
+    emitter.on(emitterId, data => {
+      // console.log('sending', data, emitterId)
+      ws.send(JSON.stringify(data))
+    });
+}
+
+const connectWaitingSockets = (clusterUrl, serverUrl) => {
+  if(connectQueue[clusterUrl]){
+    for(let connectionData of connectQueue[clusterUrl]){
+      const { emitterId, clientId, query, connectionParams, ws} = connectionData;
+      console.log('found', connectionData, connectionParams.clientSubId);
+      sendServerGenerationMessage(ws, 'end-generate')
+      setupSub(serverUrl, emitterId, clientId, query, connectionParams, ws);
+    }
+    delete connectQueue[clusterUrl]
+  }
+}
+
 // GENERATES CLUSTER SCHEMA FOR NEW SERVERS
 const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
   logger.debug('Generating cluster schema', kubeApiUrl)
   const oasRaw = await getOpenApiSpec(kubeApiUrl, schemaToken);
-  console.log('Generate Schema 1')
+  // console.log('Generate Schema 1')
   const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
-  console.log('Generate Schema 2')
+  // console.log('Generate Schema 2')
   const subs = await getWatchables(oasWatchable);
-  console.log('Generate Schema 3')
+  // console.log('Generate Schema 3')
   const oas = deleteWatchParameters(oasWatchable);
-  console.log('Generate Schema 4')
+  // console.log('Generate Schema 4')
   const graphQlSchemaMap = await utilities.mapGraphQlDefaultPaths(oas);// takes a while
-  console.log('Generate Schema 5');
+  // console.log('Generate Schema 5');
   if(graphQlSchemaMap.error){
     // proabably an invalid zuth token
     return graphQlSchemaMap;
@@ -339,18 +411,20 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
     subs.mappedWatchPath,
     subs.mappedNamespacedPaths
   ); // takes the longest
-  console.log('Generate Schema 7')
+  // console.log('Generate Schema 7')
   return schema;
 }
 
 // GENERATES NEW GQL SERVER FOR CLUSTER
 const generateGqlServer = async(port, kubeApiUrl, schemaToken) => {
-  logger.debug('Generating server at port', port)
+  // logger.debug('Generating server at port', port)
+  currentGeneratingServers[kubeApiUrl]= true
   const authTokenSplit = schemaToken.split(' ');
   const token = authTokenSplit[authTokenSplit.length - 1];
   const newSchema = await generateClusterSchema(kubeApiUrl, token);
   if(newSchema.error){
-    logger.debug('generateGqlServer error....')
+    // logger.debug('generateGqlServer error....')
+    delete currentGeneratingServers[kubeApiUrl]
     return newSchema;
   }else{
     let wsserver = await new WebSocketServer({
@@ -377,7 +451,11 @@ const generateGqlServer = async(port, kubeApiUrl, schemaToken) => {
         }
       }
     }, wsserver);
-    console.log('generateGqlServer return 2 .....')
+    // console.log('generateGqlServer return 2 .....')
+    delete currentGeneratingServers[kubeApiUrl]
+    // console.log('connectQueue!!!!!!!', connectQueue)
+    connectWaitingSockets(kubeApiUrl,  `ws://localhost:${port}/gql`)
+    // ## connect waiting sockets here
     return {
       serverUrl: `ws://localhost:${port}/gql`,
       serverObj: wsserver
@@ -423,8 +501,9 @@ const connectQuery = async(wsUrl, query, connectionParams) => {
 
 // CONNECTS CLIENTS WITH INTERNAL SUBSCRIPTIONS
 const connectSub = (wsUrl, emitterId, clientId, query, connectionParams) => {
+  console.log('connecting sub ~~~~~~~~~~~~~', connectionParams.clientSubId)
   try {
-    console.log('CONECTING TO', wsUrl, query);
+    // console.log('CONECTING TO', wsUrl, query);
     const em = new events.EventEmitter();
     const client = createClient({
       url: wsUrl,
@@ -442,6 +521,7 @@ const connectSub = (wsUrl, emitterId, clientId, query, connectionParams) => {
 
     (async () => {
       const onNext = (val) => {
+        // console.log('recieved', val)
         em.emit(emitterId, val);
       };
       await client.subscribe(
@@ -457,6 +537,7 @@ const connectSub = (wsUrl, emitterId, clientId, query, connectionParams) => {
       const internalSubId = Date.now().toString(36) + Math.random().toString(36).substr(2);
       pairSubToClient(clientId, client, internalSubId, connectionParams.clientSubId)
     })();
+
     return em;
   } catch (error) {
     console.log('Connection failed...', error)
