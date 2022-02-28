@@ -3,13 +3,18 @@ require('dotenv').config();
 const { PubSub } = require('apollo-server-express');
 const { logger } = require('./log');
 const express = require('express');
+const cache = require('./cache/serverObjCache')();
 
 const {
   createSchema,
   getWatchables,
   deleteDeprecatedWatchPaths,
   deleteWatchParameters,
+  testHydateSubscriptions
 } = require('./schema');
+const {
+  Worker, isMainThread, parentPort, workerData
+} = require('worker_threads');
 
 const utilities = require('./utilities');
 const getOpenApiSpec = require('./oas');
@@ -29,6 +34,8 @@ var process = require('process')
 const pubsub = new PubSub();
 const serverCache = require('./cache/serverGenCache');
 const { default: cluster } = require('cluster');
+
+const serverGen = require('./serverGen')
 //------
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
@@ -38,11 +45,19 @@ logger.info({ inCluster }, 'cluster mode configured');
 let clientInternalWsMap={};
 let internalSubObjMap={}
 let clientToInternalSubIdMap={};
+let rougeSocketMap={};
 
+const INTRNL_SOCKET_END_TIMEOUT= 120000;
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
-
+const {
+  printSchema,
+  buildSchema,
+  buildClientSchema,
+  printIntrospectionSchema,
+  introspectionFromSchema,
+} = require('graphql');
 let currentGeneratingServers= {};
 let connectQueue= {};
 
@@ -53,29 +68,54 @@ app.get('/stats', async(req, res) => {
 
 // GQL QUERIES
 app.get('/gql', async(req, res) => {
+  const { requesttype }= req?.headers;
   if(req?.headers?.connectionparams){
     const queryParams= JSON.parse(req?.headers?.connectionparams);
     const { query, authorization, clusterUrl }= queryParams;
-    const queryResponse= await gqlServerRouter(
-      null,
-      clusterUrl,
-      null,
-      null,
-      authorization,
-      query,
-      queryParams,
-      requestTypeEnum.query
-    ) 
-    res.send({
-      data : queryResponse
-    })
+    if(requesttype === 'query_ping'){
+      console.log('query_ping')
+      const serverStatus= await gqlServerRouter(
+        null,
+        clusterUrl,
+        null,
+        null,
+        authorization,
+        query,
+        queryParams,
+        requestTypeEnum.query_ping
+      ) 
+      console.log('query_ping',serverStatus)
+      
+      res.send({
+        data: {
+          status: serverStatus
+        }
+      })
+    }else if(requesttype === 'query'){
+
+      const queryResponse= await gqlServerRouter(
+        null,
+        clusterUrl,
+        null,
+        null,
+        authorization,
+        query,
+        queryParams,
+        requestTypeEnum.query
+      ) 
+      res.send({
+        ...queryResponse
+      })
+    }
   }
+
 });
 
 const requestTypeEnum={
   subscribe: 'subscribe',
   close: 'close',
-  query: 'query'
+  query: 'query',
+  query_ping: 'query_ping'
 };
 
 setInterval(() => {
@@ -134,11 +174,13 @@ const pairSubToClient = (clientId, subObj, internalSubId, clientSubId) => {
 
 // META WEBSOCKET CONNECTION HANDLER
 wss.on('connection', function connection(ws) {
+  ws.addEventListener('error', (err) => console.log(err.message));
+
   ws.on('message', function message(data) {
     try {
       const connectionMessage= JSON.parse(data);
       const { requestType, clientId, query, connectionParams }= connectionMessage;
-      console.log('Recieve Message For', clientId)
+      // console.log('Recieve Message For', clientId)
 
       // SUBSCRIPTION REQUEST
       if(requestType === requestTypeEnum.subscribe){
@@ -197,41 +239,75 @@ wss.on('connection', function connection(ws) {
     }
   });
 
+  ws.on('error', (err) => {
+    console.log('ws error ' + err )
+
+  })
+
+  ws.onclose = function(evt){
+    console.log('ws error ' + evt )
+
+  }
+
   logger.debug('New meta websocket', )
 });
 
 // ENDS SPECIFIC INTERNAL SUB FOR CLIENT
 const destroySpeifiedInternalWebsocket = (clientSubId, clientId) => {
-  console.log('Closing internal ws', clientSubId)
-  const internalSocketId= clientToInternalSubIdMap[clientSubId];
-  const internalSubObj = internalSubObjMap[internalSocketId];
-  internalSubObj.dispose();
-  delete internalSubObjMap[internalSocketId];
-  delete clientToInternalSubIdMap[clientSubId];
-  const filteredClientInternalWs= clientInternalWsMap[clientId].filter((intsbid) => intsbid !== internalSocketId);
-  clientInternalWsMap[clientId]= filteredClientInternalWs;
+  try {
+    setTimeout(() => {
+      console.log('Closing internal ws', clientSubId)
+
+      const internalSocketId= clientToInternalSubIdMap[clientSubId];
+      const internalSubObj = internalSubObjMap[internalSocketId];
+      if(internalSubObj){
+        internalSubObj?.dispose();
+        delete internalSubObjMap[internalSocketId];
+        delete clientToInternalSubIdMap[clientSubId];
+        const filteredClientInternalWs= clientInternalWsMap[clientId].filter((intsbid) => intsbid !== internalSocketId);
+        clientInternalWsMap[clientId]= filteredClientInternalWs;
+      }
+
+    }, INTRNL_SOCKET_END_TIMEOUT)
+
+  } catch (error) {
+    console.log('destroySpeifiedInternalWebsocket ' + error )
+  }
+
 }
 
 // ENDS ALL CACHED ROUTING DATA FOR CLIENT
 const destroyCachedDataForClient = (wsId) => {
-  logger.debug('Internal ws close request from', wsId)
-  let internalSubsForClient=[];
-  for(let cachedInternalSubId of clientInternalWsMap[wsId]){
-    internalSubObjMap[cachedInternalSubId].dispose();
-    delete internalSubObjMap[cachedInternalSubId];
-    internalSubsForClient.push(cachedInternalSubId);
-  };
-  delete clientInternalWsMap[wsId];
-  let newClientToInternalSubIdMap= {...clientToInternalSubIdMap}
-  for(let internalSubClientKey of Object.keys(clientToInternalSubIdMap)){
-    if(internalSubsForClient.includes(clientToInternalSubIdMap[internalSubClientKey])){
-      delete newClientToInternalSubIdMap[internalSubClientKey]
-    }
+  try {
+    setTimeout(() => {
+      logger.debug('Internal ws close request from', wsId)
+      let internalSubsForClient=[];
+      if(wsId&&!clientInternalWsMap?.[wsId]?.length > 0){
+        for(let cachedInternalSubId of clientInternalWsMap[wsId]){
+          internalSubObjMap[cachedInternalSubId].dispose();
+          delete internalSubObjMap[cachedInternalSubId];
+          internalSubsForClient.push(cachedInternalSubId);
+        };
+        delete clientInternalWsMap[wsId];
+      }
+
+      let newClientToInternalSubIdMap= {...clientToInternalSubIdMap}
+      for(let internalSubClientKey of Object.keys(clientToInternalSubIdMap)){
+        if(internalSubsForClient.includes(clientToInternalSubIdMap[internalSubClientKey])){
+          delete newClientToInternalSubIdMap[internalSubClientKey]
+        }
+      }
+      clientToInternalSubIdMap= newClientToInternalSubIdMap;
+    }, INTRNL_SOCKET_END_TIMEOUT)
+
+  } catch (error) {
+    console.log('destroyCachedDataForClient ' + error )
+
   }
-  clientToInternalSubIdMap= newClientToInternalSubIdMap;
+
 }
 
-// DETERMINES IF NEW GQL SERVER NEEDS GENERATION
+// ROUTES ALL TRAFFIC, DETERMINES IF NEW GQL SERVER NEEDS GENERATION
 const gqlServerRouter = async(
   emitterId, 
   clusterUrl, 
@@ -242,112 +318,159 @@ const gqlServerRouter = async(
   connectionParams,
   requestMode
 ) => {
+  try {
+    const genServerHandler = async(freePort) => {
+      // logger.debug('Generating server for', clusterUrl)
+      // const { serverUrl, serverObj, error }= await generateGqlServer(freePort, clusterUrl, token);
+      generateGqlServer(freePort, clusterUrl, token).then(async({serverUrl, serverObj, error}) => {
+        console.log('Server Gen return!', connectionParams.clientSubId)
+        if(!error){
+          serverCache.cacheServer(null, clusterUrl, serverUrl, freePort, serverObj);
+          serverCache.movePortUsed(freePort);
+    
+          if(requestMode === requestTypeEnum.subscribe){
+            console.log('does sub exist?', )
+            console.log('COnnecting sub for', connectionParams.clientSubId);
+            sendServerGenerationMessage(ws, 'end-generate')
+            setupSub(serverUrl, emitterId, clientId, query, connectionParams, ws)
+          }else if (requestMode === requestTypeEnum.query){
+            const queryResponse= await connectQuery(serverUrl, query, connectionParams);
+            return queryResponse;
+          }
+          logger.debug('Server generation success', clusterUrl)
+        }else {
+          logger.debug('Server generation failed....', clusterUrl)
+        }
+      })
+
+    }
   
-  const genServerHandler = async(freePort) => {
-    // logger.debug('Generating server for', clusterUrl)
-    const { serverUrl, serverObj, error }= await generateGqlServer(freePort, clusterUrl, token);
-    if(!error){
-      serverCache.cacheServer(null, clusterUrl, serverUrl, freePort, serverObj);
-      serverCache.movePortUsed(freePort);
-
+    const gqlServerData= serverCache.getServer(clusterUrl);
+    // SERVER FOR CLUSTER EXISTS -> CONNECT
+    if(gqlServerData){
+      const { gqlServerUrl, gqlServerClient }= gqlServerData;
+      logger.debug('Found existing server for', clusterUrl);
+  
+      // SERVER EXISTS -> SUBSCRIPTION
       if(requestMode === requestTypeEnum.subscribe){
-        console.log('COnnecting sub for', connectionParams.clientSubId);
-        sendServerGenerationMessage(ws, 'end-generate')
-        setupSub(serverUrl, emitterId, clientId, query, connectionParams, ws)
-      }else{
-        const queryResponse= await connectQuery(serverUrl, query, connectionParams);
+        setupSub(gqlServerUrl, emitterId, clientId, query, connectionParams, ws)
+      }
+  
+      // SERVER EXISTS -> QUERY
+      else if(requestMode === requestTypeEnum.query){
+        const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams);
+        serverCache.refreshServerUsage(clusterUrl)
         return queryResponse;
       }
-      logger.debug('Server generation success', clusterUrl)
-    }else {
-      logger.debug('Server generation failed....', clusterUrl)
-    }
-  }
-
-  const gqlServerData= serverCache.getServer(clusterUrl);
-  // SERVER FOR CLUSTER EXISTS -> CONNECT
-  if(gqlServerData){
-    const { gqlServerUrl, gqlServerClient }= gqlServerData;
-    logger.debug('Found existing server for', clusterUrl);
-
-    // SUBSCRIPTION
-    if(requestMode === requestTypeEnum.subscribe){
-      setupSub(gqlServerUrl, emitterId, clientId, query, connectionParams, ws)
-    }
-
-    // QUERY
-    else{
-      const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams);
-      serverCache.refreshServerUsage(clusterUrl)
-      return queryResponse;
-    }
-  }
-
-  // SERVER DOSENT EXIST -> GENERATE
-  else{
-    // logger.debug('Check if ports are available....', serverCache.portQueue);
-    const freePort= serverCache.getPort();
-    sendServerGenerationMessage(ws, 'start-generate')
-    //IF SERVER IS ALREADY BENING GENERATED
-    if(currentGeneratingServers[clusterUrl]){
-      console.log('Server is being created', connectionParams.clientSubId)
-      connectQueue[clusterUrl] ? 
-      connectQueue[clusterUrl].push(
-        {
-          clusterUrl: connectionParams.clusterUrl, 
-          emitterId, 
-          clientId, 
-          query, 
-          connectionParams,
-          ws
-        }
-      ) :
-      connectQueue[clusterUrl]= 
-      [
-        {
-          clusterUrl: connectionParams.clusterUrl, 
-          emitterId, 
-          clientId, 
-          query, 
-          connectionParams,
-          ws
-        }
-      ]
-      console.log('connectQueue[clusterUrl]', connectQueue[clusterUrl]?.length)
-      // connectQueue= newConnectionQueue;
-      return;
-    }
-
-    // FREE PORT -> CREATE SERVER AT PORT
-    if(freePort){
-      // logger.debug('Port is available', freePort)
-      const queryResponse = await genServerHandler(freePort);
-      // logger.debug('genServerHandler respnse!!!', queryResponse)
-      if(requestMode === requestTypeEnum.query){
-        // logger.debug('returning query....')
-        return queryResponse;
+  
+      else if(requestMode === requestTypeEnum.query_ping){
+        return 'exists';
       }
     }
-
-    // NO FREE PORTS -> RECYCLE SERVER
+  
+    // SERVER DOSENT EXIST -> GENERATE
     else{
-      // logger.debug('Port is unavailable, recle port')
-      await serverCache.recycleServer();
-      return await gqlServerRouter(
-        emitterId, 
-        clusterUrl, 
-        clientId, 
-        ws, 
-        token, 
-        query, 
-        connectionParams,
-        requestMode
-      );
+      sendServerGenerationMessage(ws, 'start-generate')
+      const freePort= serverCache.getPort();
+  
+      //IF SERVER IS ALREADY BENING GENERATED
+      if(currentGeneratingServers[clusterUrl]){
+        if(requestMode === requestTypeEnum.query_ping){
+          return 'generating';
+        }
+        if(requestMode === requestTypeEnum.query){
+          const response = await handleQueryWait(clusterUrl, query, connectionParams);
+          // console.log('query reppppp???', response);
+          return response;
+        }
+        // console.log('Server is being created', connectionParams.clientSubId)
+        connectQueue[clusterUrl] ? 
+        connectQueue[clusterUrl].push(
+          {
+            clusterUrl: connectionParams.clusterUrl, 
+            emitterId, 
+            clientId, 
+            query, 
+            connectionParams,
+            ws
+          }
+        ) :
+        connectQueue[clusterUrl]= 
+        [
+          {
+            clusterUrl: connectionParams.clusterUrl, 
+            emitterId, 
+            clientId, 
+            query, 
+            connectionParams,
+            ws
+          }
+        ]
+        // console.log('connectQueue[clusterUrl]', connectQueue[clusterUrl]?.length)
+        return;
+      }
+  
+      // FREE PORT -> CREATE SERVER AT PORT
+      if(freePort){
+        console.log('GENERATE SERVER!', connectionParams.clientSubId)
+        // for req query ping, ask for server and leave
+        if(requestMode === requestTypeEnum.query_ping){
+          genServerHandler(freePort);
+          return 'generating';
+        }
+        sendServerGenerationMessage(ws, 'start-generate')
+  
+        const queryResponse = await genServerHandler(freePort);
+        if(requestMode === requestTypeEnum.query){
+          return queryResponse;
+        }
+      }
+  
+      // NO FREE PORTS -> RECYCLE SERVER
+      else{
+        await serverCache.recycleServer();
+        return await gqlServerRouter(
+          emitterId, 
+          clusterUrl, 
+          clientId, 
+          ws, 
+          token, 
+          query, 
+          connectionParams,
+          requestMode
+        );
+      }
     }
+  } catch (error) {
+    console.log('gqlServerRouter', error)
+
   }
+
 }
 
+const handleQueryWait = async(clusterUrl, query, connectionParams) => {
+  return new Promise(async function (resolve) {
+    let hasNext=false;
+
+    const interval = setInterval(async() => {
+      if(!currentGeneratingServers?.[clusterUrl]&&!hasNext){
+        hasNext=true
+        clearInterval(interval);
+        const { gqlServerUrl } = serverCache.getServer(clusterUrl)
+        const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams);
+        console.log('queryResponse', queryResponse)
+        resolve(queryResponse);
+      }
+    }, 2000);
+  })
+}
+
+// SENDS SERVER GENERATION STATUS MESSAGES TO AFFECTED CLIENTS
 const sendServerGenerationMessage = (focusedWs, messageType) => {
+  // console.log('sendServerGenerationMessage', messageType)
+  if(focusedWs?.readyState !== 1)
+    return;
+
   messageType === 'start-generate'&&focusedWs?.send(JSON.stringify(
     {
       status: 'generating'
@@ -355,26 +478,36 @@ const sendServerGenerationMessage = (focusedWs, messageType) => {
   ))
   messageType === 'end-generate'&&focusedWs?.send(JSON.stringify(
     {
-      status: 'complete'
+      status: 'exists'
     }
   ))
 }
 
+// SETS UP SUBSCRIPTION FOR CLIENT
 const setupSub = (gqlServerUrl, emitterId, clientId, query, connectionParams, ws) => {
-  const emitter = connectSub(gqlServerUrl, emitterId, clientId, query, connectionParams);
+  try {
+    const emitter = connectSub(gqlServerUrl, emitterId, clientId, query, connectionParams);
     emitter.on(emitterId, data => {
-      // console.log('sending', data, emitterId)
-      ws.send(JSON.stringify(data))
+      if(ws?.readyState !== 1)
+        return;
+
+      ws?.send(JSON.stringify(data))
     });
+  } catch (error) {
+    console.log('Emit Error', error)
+  }
+
 }
 
+// CONNECTS SOCKETS THAT ARE WAITING ON GQL SERVER TO BE GENERATED
 const connectWaitingSockets = (clusterUrl, serverUrl) => {
   if(connectQueue[clusterUrl]){
     for(let connectionData of connectQueue[clusterUrl]){
       const { emitterId, clientId, query, connectionParams, ws} = connectionData;
-      console.log('found', connectionData, connectionParams.clientSubId);
+      console.log('connectWaitingSockets',connectionParams.clientSubId);
       sendServerGenerationMessage(ws, 'end-generate')
       setupSub(serverUrl, emitterId, clientId, query, connectionParams, ws);
+
     }
     delete connectQueue[clusterUrl]
   }
@@ -415,53 +548,57 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
   return schema;
 }
 
-// GENERATES NEW GQL SERVER FOR CLUSTER
-const generateGqlServer = async(port, kubeApiUrl, schemaToken) => {
-  // logger.debug('Generating server at port', port)
-  currentGeneratingServers[kubeApiUrl]= true
-  const authTokenSplit = schemaToken.split(' ');
-  const token = authTokenSplit[authTokenSplit.length - 1];
-  const newSchema = await generateClusterSchema(kubeApiUrl, token);
-  if(newSchema.error){
-    // logger.debug('generateGqlServer error....')
-    delete currentGeneratingServers[kubeApiUrl]
-    return newSchema;
-  }else{
-    let wsserver = await new WebSocketServer({
-      port: port,
-      path: '/gql'
-    });
-    await useServer({ 
-      schema: newSchema, 
-      context: ({req, connectionParams }) => {
-        const {
-          authorization,
-          clusterUrl,
-          clientId,
-          emitterId
-        }= connectionParams;
+// // GENERATES NEW GQL SERVER FOR SPECIFIC CLUSTER
+// const generateGqlServer = async(port, kubeApiUrl, schemaToken) => {
+//   console.log('GEN NEW SERVER----', port);
+//   return new Promise(async(resolve, reject) => {
+//     currentGeneratingServers[kubeApiUrl]= true
+//     const authTokenSplit = schemaToken.split(' ');
+//     const token = authTokenSplit[authTokenSplit.length - 1];
+//     const newSchema = await generateClusterSchema(kubeApiUrl, token);
+//     if(newSchema.error){
+//       // logger.debug('generateGqlServer error....')
+//       delete currentGeneratingServers[kubeApiUrl]
+//       return newSchema;
+//     }else{
+//       let wsserver = await new WebSocketServer({
+//         port: port,
+//         path: '/gql'
+//       });
+//       await useServer({ 
+//         schema: newSchema, 
+//         context: ({req, connectionParams }) => {
+//           const {
+//             authorization,
+//             clusterUrl,
+//             clientId,
+//             emitterId
+//           }= connectionParams;
+    
+//           return {
+//             authorization,
+//             clusterUrl,
+//             clientId,
+//             subId: Date.now().toString(36) + Math.random().toString(36).substr(2),
+//             emitterId,
+//             pubsub
+//           }
+//         }
+//       }, wsserver);
+//       console.log('GEN NEW SERVER COMPLETE++++++', port);
+
+//       delete currentGeneratingServers[kubeApiUrl];
   
-        return {
-          authorization,
-          clusterUrl,
-          clientId,
-          subId: Date.now().toString(36) + Math.random().toString(36).substr(2),
-          emitterId,
-          pubsub
-        }
-      }
-    }, wsserver);
-    // console.log('generateGqlServer return 2 .....')
-    delete currentGeneratingServers[kubeApiUrl]
-    // console.log('connectQueue!!!!!!!', connectQueue)
-    connectWaitingSockets(kubeApiUrl,  `ws://localhost:${port}/gql`)
-    // ## connect waiting sockets here
-    return {
-      serverUrl: `ws://localhost:${port}/gql`,
-      serverObj: wsserver
-    }
-  }
-}
+//       // server gen is complete -> connect waiting sockets
+//       connectWaitingSockets(kubeApiUrl,  `ws://localhost:${port}/gql`);
+//       resolve ({
+//         serverUrl: `ws://localhost:${port}/gql`,
+//         serverObj: wsserver
+//       })
+//     }
+//   })
+
+// }
 
 // CONNECTS CLIENTS WITH INTERNAL QUERY
 const connectQuery = async(wsUrl, query, connectionParams) => {
@@ -501,7 +638,6 @@ const connectQuery = async(wsUrl, query, connectionParams) => {
 
 // CONNECTS CLIENTS WITH INTERNAL SUBSCRIPTIONS
 const connectSub = (wsUrl, emitterId, clientId, query, connectionParams) => {
-  console.log('connecting sub ~~~~~~~~~~~~~', connectionParams.clientSubId)
   try {
     // console.log('CONECTING TO', wsUrl, query);
     const em = new events.EventEmitter();
@@ -531,7 +667,9 @@ const connectSub = (wsUrl, emitterId, clientId, query, connectionParams) => {
         {
           next: onNext,
           error: (er) => console.log('Subscription error!' ,er),
-          complete: (er) => console.log('Subscription complete!'),
+          complete: (er) => console.log('Subscription complete!', connectionParams.clientSubId),
+          onclose: () => console.log('onclose '),
+          
         },
       );
       const internalSubId = Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -552,8 +690,199 @@ const serverStart = () => {
   }
   wsServer.on('request', app);
   wsServer.listen(PORT, () => {
-    console.log(`🚀 Ws server Listening on port ${wsServer.address().port}`)
+    console.log(`🚀🚀🚀 Ws server Listening on port ${wsServer.address().port}`)
   }) 
 };
 
-serverStart();
+//https://east.npe.duck.master.kube.t-mobile.com:6443
+// kubeApiUrl: 'https://west.dev.duck.master.kube.t-mobile.com:6443',
+
+
+const generateGqlServer2 = async(port=1111, schema) => {
+  // console.log('GEN NEW SERVER----', port);
+  return new Promise(async(resolve, reject) => {
+    // currentGeneratingServers[kubeApiUrl]= true
+    // const authTokenSplit = schemaToken.split(' ');
+    // const token = authTokenSplit[authTokenSplit.length - 1];
+    // const newSchema = await generateClusterSchema(kubeApiUrl, token);
+    if(!schema){
+      // delete currentGeneratingServers[kubeApiUrl]
+      // ## Ping main thread -> error
+      return schema;
+    }else{
+      let wsserver = await new WebSocketServer({
+        port: port,
+        path: '/gql'
+      });
+      await useServer({ 
+        schema: schema, 
+        context: ({req, connectionParams }) => {
+          const {
+            authorization,
+            clusterUrl,
+            clientId,
+            emitterId
+          }= connectionParams;
+    
+          return {
+            authorization,
+            clusterUrl,
+            clientId,
+            subId: Date.now().toString(36) + Math.random().toString(36).substr(2),
+            emitterId,
+            pubsub
+          }
+        }
+      }, wsserver);
+      console.log('GEN NEW SERVER COMPLETE++++++111111', port);
+
+      // ## PING MAIN THREAD -> complete
+      // delete currentGeneratingServers[kubeApiUrl];
+      // server gen is complete -> connect waiting sockets
+      // connectWaitingSockets(kubeApiUrl,  `ws://localhost:${port}/gql`);
+      // resolve ({
+      //   serverUrl: `ws://localhost:${port}/gql`,
+      //   serverObj: wsserver
+      // })
+      // parentPort.postMessage({
+      //   serverUrl: `ws://localhost:${port}/gql`,
+      //   serverObj: wsserver
+      // });
+
+    }
+  })
+
+}
+
+const testWorker = () => {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('./src/serverGen.js', {
+      workerData: {
+        port: '1111',
+        kubeApiUrl: 'https://east.npe.duck.master.kube.t-mobile.com:6443',
+        schemaToken: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ik1yNS1BVWliZkJpaTdOZDFqQmViYXhib1hXMCJ9.eyJhdWQiOiI1YzllODJiNS03NzBiLTQ2NzYtYjZiOC0zNzU5ZDdiNGEwMmIiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vYmUwZjk4MGItZGQ5OS00YjE5LWJkN2ItYmM3MWEwOWIwMjZjL3YyLjAiLCJpYXQiOjE2NDYwNjE5MjUsIm5iZiI6MTY0NjA2MTkyNSwiZXhwIjoxNjQ2MDY1ODI1LCJlbWFpbCI6IkRldHJpY2guVXR0aTFAVC1Nb2JpbGUuY29tIiwiZ3JvdXBzIjpbIkF0ZXJuaXR5IFVzZXJzIiwiTGljZW5zZV9XaW4xMF9SU0FUIEZ1bGwiLCJQR0hOLUlTQS1Mb2FkX0JhbGFuY2VyLVBSRCIsIk1vYmlsZUlyb25fRU5UIiwiUm9sZV9UTVVTX0ZURSIsIkxpY2Vuc2VfTWljcm9zb2Z0IE9mZmljZSAzNjUgeDg2IE9uLURlbWFuZCIsIlNBIE5vdGlmaWNhdGlvbnMiLCJMaWNlbnNlX01pY3Jvc29mdCBBenVyZSBFTVMiLCJBdGVybml0eSBFVFMiLCJSb2xlX1RlY2hub2xvZ3lfQWxsIiwiUmVsaWFuY2VXb3JrTG9nIiwiTGljZW5zZV9NYWtlIE1lIEFkbWluIEVucm9sbG1lbnQiLCJEcnV2YSBVc2VycyBXZXN0IiwiU3BsdW5rVmlld19BbGxVc2VycyIsIk9UX1RlY2hub2xvZ3lfQWxsIiwiRFNHX1dlYmJfRlRFIiwiTGljZW5zZV9EcnV2YSBJblN5bmMiLCJMaWNlbnNlX0RvY2tlciIsIkFwcERpc3RfUlNBVCBGdWxsIiwiQXBwRGlzdF9NaWNyb3NvZnQgT2ZmaWNlIDM2NSB4ODYgT24tRGVtYW5kIiwiQ2l0cml4X0NhcmVfUmVtb3RlQWNjZXNzIiwiVlBOLU5ldHdvcmstRUlUIiwiT0tUQV9BcHByZWNpYXRpb24tWm9uZSIsIkFsbG93IFdvcmtzdGF0aW9uIEVsZXZhdGlvbiIsIkFwcGRpc3RfRHJ1dmEgdXNlcnMgZXhjbHVkaW5nIEV4ZWNzIiwiVGVjaG5vbG9neV9STkVcdTAwMjZPXzIiLCJPVF9GVEUiLCJNSV9BcHBzX1ROYXRpb25fV3JhcHBlZCJdLCJuYW1lIjoiVXR0aSwgRGV0cmljaCIsIm5vbmNlIjoiNzk4OWMxZTctNDY4YS00NTlhLTlkMTEtZjI1MjU4YjJlNjQxIiwib2lkIjoiMTdkOTI5YjItNjkwNi00N2UwLThjYTktM2FiYjM5NzJiYzdiIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiRGV0cmljaC5VdHRpMUBULU1vYmlsZS5jb20iLCJyaCI6IjAuQVJNQUM1Z1B2cG5kR1V1OWU3eHhvSnNDYkxXQ25sd0xkM1pHdHJnM1dkZTBvQ3NUQU4wLiIsInN1YiI6IjJRUHljekFrcFAyaHRSUEVwU1lfLVR5SjlZNjZ3Wjc2VjQ0bWx6TVpOYlEiLCJ0aWQiOiJiZTBmOTgwYi1kZDk5LTRiMTktYmQ3Yi1iYzcxYTA5YjAyNmMiLCJ1dGkiOiJJNUVKVEZVc2VrMmN3Ui01YUx1VUFBIiwidmVyIjoiMi4wIiwic2FtYWNjb3VudG5hbWUiOiJkdXR0aTEifQ.qZ7RdlBoHTnxqsDSdRsG-XDw77l1PW1nmsnp2aM767gZOmcP6FxD5Ln72IzkqrzTFy09Err44Z3xqL8sqsXktpUJRGfAZnCaqUKpUi3V-uuaEsvglE1zYSB6_vMGgHhHEH1vrYxvYibsW-PUJfMGehSLD86K-tzoyJB29-c0sm6joUCo5UIGIiv_Md5fYm4m5pc1I2v2BoLCMEFYHr0uumO4G1VujtvdAHxo_yNAHRZg9x8MlXEtaEGcvAMJuv7DPSgFCZUT0W8DYnQnwRDS1hGLPv4Mu-v4op0pPyqVX_XSz6pYQJxiQg56PWPEFs_eYE8w93uRJBR_4yiel3K6RQ'
+      }
+    });
+    worker.on('message', async(msg) => {
+      console.log(Object.keys(msg.schemaIntrospection.__schema));
+      console.log(Object.keys(msg.schemaIntrospection.__schema));
+      console.log('return!');
+      for(let gqltype of msg.schemaIntrospection.__schema.types){
+        console.log(gqltype.name)
+
+        // if(gqltype.name === 'heck'){
+        //   console.log(gqltype)
+        // }
+        
+      }
+      // GENERATES NEW GQL SERVER FOR SPECIFIC CLUSTER
+
+      // console.log('returned!', msg.schemaIntrospection);
+      // const newSchema = buildSchema(msg.schemaIntrospection);
+      // const mergedSchema = await testHydateSubscriptions(
+      //   newSchema,
+      //   msg.subscriptions,
+      //   msg.watchableNonNamespacePaths,
+      //   msg.mappedNamespacedPaths
+      // )
+      // console.log('mergedSchema', mergedSchema);
+
+      // generateGqlServer2(1111, mergedSchema)
+    });
+    worker.on('message', resolve);
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0)
+        reject(new Error(`Worker stopped with exit code ${code}`));
+    });
+  });
+
+};
+
+const testWorker2 = () => {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('./src/serverGen.js', {
+      workerData: {
+        port: '1112',
+        kubeApiUrl: 'https://east.npe.duck.master.kube.t-mobile.com:6443',
+        schemaToken: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ik1yNS1BVWliZkJpaTdOZDFqQmViYXhib1hXMCJ9.eyJhdWQiOiI1YzllODJiNS03NzBiLTQ2NzYtYjZiOC0zNzU5ZDdiNGEwMmIiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vYmUwZjk4MGItZGQ5OS00YjE5LWJkN2ItYmM3MWEwOWIwMjZjL3YyLjAiLCJpYXQiOjE2NDU4MDg0NTEsIm5iZiI6MTY0NTgwODQ1MSwiZXhwIjoxNjQ1ODEyMzUxLCJlbWFpbCI6IkRldHJpY2guVXR0aTFAVC1Nb2JpbGUuY29tIiwiZ3JvdXBzIjpbIkF0ZXJuaXR5IFVzZXJzIiwiTGljZW5zZV9XaW4xMF9SU0FUIEZ1bGwiLCJQR0hOLUlTQS1Mb2FkX0JhbGFuY2VyLVBSRCIsIk1vYmlsZUlyb25fRU5UIiwiUm9sZV9UTVVTX0ZURSIsIkxpY2Vuc2VfTWljcm9zb2Z0IE9mZmljZSAzNjUgeDg2IE9uLURlbWFuZCIsIlNBIE5vdGlmaWNhdGlvbnMiLCJMaWNlbnNlX01pY3Jvc29mdCBBenVyZSBFTVMiLCJBdGVybml0eSBFVFMiLCJSb2xlX1RlY2hub2xvZ3lfQWxsIiwiUmVsaWFuY2VXb3JrTG9nIiwiTGljZW5zZV9NYWtlIE1lIEFkbWluIEVucm9sbG1lbnQiLCJEcnV2YSBVc2VycyBXZXN0IiwiU3BsdW5rVmlld19BbGxVc2VycyIsIk9UX1RlY2hub2xvZ3lfQWxsIiwiRFNHX1dlYmJfRlRFIiwiTGljZW5zZV9EcnV2YSBJblN5bmMiLCJMaWNlbnNlX0RvY2tlciIsIkFwcERpc3RfUlNBVCBGdWxsIiwiQXBwRGlzdF9NaWNyb3NvZnQgT2ZmaWNlIDM2NSB4ODYgT24tRGVtYW5kIiwiQ2l0cml4X0NhcmVfUmVtb3RlQWNjZXNzIiwiVlBOLU5ldHdvcmstRUlUIiwiT0tUQV9BcHByZWNpYXRpb24tWm9uZSIsIkFsbG93IFdvcmtzdGF0aW9uIEVsZXZhdGlvbiIsIkFwcGRpc3RfRHJ1dmEgdXNlcnMgZXhjbHVkaW5nIEV4ZWNzIiwiVGVjaG5vbG9neV9STkVcdTAwMjZPXzIiLCJPVF9GVEUiLCJNSV9BcHBzX1ROYXRpb25fV3JhcHBlZCJdLCJuYW1lIjoiVXR0aSwgRGV0cmljaCIsIm5vbmNlIjoiNWVlYzBmMTAtNDFkYS00ODU0LTkxYWQtOGE4MzRiNDhmZjIwIiwib2lkIjoiMTdkOTI5YjItNjkwNi00N2UwLThjYTktM2FiYjM5NzJiYzdiIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiRGV0cmljaC5VdHRpMUBULU1vYmlsZS5jb20iLCJyaCI6IjAuQVJNQUM1Z1B2cG5kR1V1OWU3eHhvSnNDYkxXQ25sd0xkM1pHdHJnM1dkZTBvQ3NUQU4wLiIsInN1YiI6IjJRUHljekFrcFAyaHRSUEVwU1lfLVR5SjlZNjZ3Wjc2VjQ0bWx6TVpOYlEiLCJ0aWQiOiJiZTBmOTgwYi1kZDk5LTRiMTktYmQ3Yi1iYzcxYTA5YjAyNmMiLCJ1dGkiOiJ3N2xnRW1wMF9VdS1oYk92a0xVZEFBIiwidmVyIjoiMi4wIiwic2FtYWNjb3VudG5hbWUiOiJkdXR0aTEifQ.BRv7Z85p4d90N38XFGiFGtBi7VcjhOY3P-iYGHWn46MmfsPT6Z1GeKtl9kQu1xJ2hSoEBMeWUCST-NIjEJktHKBzuCcnEz4uDpM8vGuSKR6xUnmg1O93thyPyE2ZeCgLIUSeJMl2p7vsD5E-y2ZYaSMoV_j0rTMmR2eJrQMffK5EDqixwjtqElihs3IOvSHDkZSyu2d02hiJlfT3pgFIuLps8yWHpy0Pk6olQsM29t-7_vIu_beZwTiJuS2dY7fFXZ0vNSFjrWommPL1DQv1n5msC6Ka034Mtw2legj0275yKs6CGRen6QMl_aupgoFOZwX4wranBGHHYcRjUsm7tA'
+      }
+    });
+    worker.on('message', (msg) => {
+      // console.log(msg);
+      // GENERATES NEW GQL SERVER FOR SPECIFIC CLUSTER
+      const generateGqlServer = async(port=1111, schema) => {
+        // console.log('GEN NEW SERVER----', port);
+        return new Promise(async(resolve, reject) => {
+          // currentGeneratingServers[kubeApiUrl]= true
+          // const authTokenSplit = schemaToken.split(' ');
+          // const token = authTokenSplit[authTokenSplit.length - 1];
+          // const newSchema = await generateClusterSchema(kubeApiUrl, token);
+          if(!schema){
+            // delete currentGeneratingServers[kubeApiUrl]
+            // ## Ping main thread -> error
+            return schema;
+          }else{
+            let wsserver = await new WebSocketServer({
+              port: port,
+              path: '/gql'
+            });
+            await useServer({ 
+              schema: schema, 
+              context: ({req, connectionParams }) => {
+                const {
+                  authorization,
+                  clusterUrl,
+                  clientId,
+                  emitterId
+                }= connectionParams;
+          
+                return {
+                  authorization,
+                  clusterUrl,
+                  clientId,
+                  subId: Date.now().toString(36) + Math.random().toString(36).substr(2),
+                  emitterId,
+                  pubsub
+                }
+              }
+            }, wsserver);
+            console.log('GEN NEW SERVER COMPLETE++++++222222', port);
+
+            // ## PING MAIN THREAD -> complete
+            // delete currentGeneratingServers[kubeApiUrl];
+            // server gen is complete -> connect waiting sockets
+            // connectWaitingSockets(kubeApiUrl,  `ws://localhost:${port}/gql`);
+            // resolve ({
+            //   serverUrl: `ws://localhost:${port}/gql`,
+            //   serverObj: wsserver
+            // })
+            // parentPort.postMessage({
+            //   serverUrl: `ws://localhost:${port}/gql`,
+            //   serverObj: wsserver
+            // });
+
+          }
+        })
+
+      }
+      const newSchema = buildSchema(msg)
+      generateGqlServer(1112, newSchema)
+
+    });
+    worker.on('message', resolve);
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0)
+        reject(new Error(`Worker stopped with exit code ${code}`));
+    });
+  });
+
+};
+
+
+// serverStart();
+cache.set('test', 'test');
+console.log('oiiiiiiii', cache.get('test'));
+testWorker() // NODE WORKER CALL
+// testWorker2()

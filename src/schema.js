@@ -330,7 +330,51 @@ exports.createSchema = async (
   watchableNonNamespacePaths,
   mappedNamespacedPaths
 ) => {
+  // console.log('oas', oas)
+
   const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl);
+  // console.log('baseSchema', baseSchema)
+  const schemas = [baseSchema];
+  const pathMap = {};
+
+  subscriptions.forEach((element) => {
+    let ObjectEventName;
+    // console.log('element.k8sUrl', element.k8sUrl)
+    if (element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log') {
+      element.k8sType = `${element.k8sType}Logs`
+      ObjectEventName = `${element.k8sType}Event`;
+    } else {
+      ObjectEventName = `${element.k8sType}Event`;
+    }
+    const includesNamespace = element.k8sUrl.includes('{namespace}');
+    const includesName = element.k8sUrl.includes('{name}');
+
+    if (includesName && includesNamespace && !pathMap[ObjectEventName]) {
+      pathMap[ObjectEventName] = true;
+      const schema = createSubscriptionSchema(
+        baseSchema,
+        element.schemaType,
+        element.k8sType,
+        element.k8sUrl,
+        watchableNonNamespacePaths,
+        mappedNamespacedPaths
+      );
+      schemas.push(schema);
+    }
+  });
+  return mergeSchemas({ schemas });
+};
+
+exports.testHydateSubscriptions = async (
+  baseSchema,
+  subscriptions,
+  watchableNonNamespacePaths,
+  mappedNamespacedPaths
+) => {
+  // console.log('oas', oas)
+
+  // const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl);
+  // console.log('baseSchema', baseSchema)
   const schemas = [baseSchema];
   const pathMap = {};
 

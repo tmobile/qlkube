@@ -101,7 +101,7 @@ const _setupWatch = async function (
     let timerId;
 
     const watchDone = (err) => {
-      logger.debug('watch done', err, subId, clientId, url);
+      // logger.debug('watch done', err, subId, clientId, url);
 
       if (timerId != null) { clearTimeout(timerId); }
       timerId = setTimeout(async () => {
@@ -116,7 +116,7 @@ const _setupWatch = async function (
     };
 
     const watchError = (err) => {
-      logger.error('watch err!', err.message);
+      // logger.error('watch err!', err.message);
     };
 
     const queryParams = {
@@ -137,11 +137,11 @@ const _setupWatch = async function (
           watchError
         )
         .then((req) => {
-          logger.debug('watch request: ', url, subId, clientId);
+          // logger.debug('watch request: ', url, subId, clientId);
           return req;
         })
         .catch((err) => {
-          logger.error('watch error: ', err.message);
+          // logger.error('watch error: ', err.message);
         });
     };
 
@@ -377,38 +377,43 @@ function disconnectWatchable(clientId) {
  * @param {Object} _subId generated on qlkube, differentiates watch/stream sockets per client
  */
 function disconnectSpecificSocket(clientId, _subId) {
-  let pathClientKey_subId_map_cacheClone = deepClone(cache.get(pathClientKey_subId_map));
-  let subId_watchObj_map_cacheReference = cache.get(subId_watchObj_map);
-  let clientId_subId_map_cacheClone = deepClone(cache.get(clientId_subId_map));
-  if (clientId_subId_map_cacheClone[clientId]) {
-    let allSubsForClient = clientId_subId_map_cacheClone[clientId];
-    const pathClientKey_subId_map_CLONE = deepClone(pathClientKey_subId_map_cacheClone);
-    const subId_watchObj_map_CLONE = { ...subId_watchObj_map_cacheReference }
-    for (const [clientPathKey, subId] of Object.entries(pathClientKey_subId_map_CLONE)) {
-      if (subId === _subId) {
-        delete pathClientKey_subId_map_cacheClone[clientPathKey]
+  try {
+    let pathClientKey_subId_map_cacheClone = deepClone(cache.get(pathClientKey_subId_map));
+    let subId_watchObj_map_cacheReference = cache.get(subId_watchObj_map);
+    let clientId_subId_map_cacheClone = deepClone(cache.get(clientId_subId_map));
+    if (clientId_subId_map_cacheClone[clientId]) {
+      let allSubsForClient = clientId_subId_map_cacheClone[clientId];
+      const pathClientKey_subId_map_CLONE = deepClone(pathClientKey_subId_map_cacheClone);
+      const subId_watchObj_map_CLONE = { ...subId_watchObj_map_cacheReference }
+      for (const [clientPathKey, subId] of Object.entries(pathClientKey_subId_map_CLONE)) {
+        if (subId === _subId) {
+          delete pathClientKey_subId_map_cacheClone[clientPathKey]
+        }
       }
+      let updatedSubsForClient = []
+      if (
+        subId_watchObj_map_CLONE[_subId] &&
+        allSubsForClient.includes(_subId)
+      ) {
+        let subToAbort = cache.get(subId_watchObj_map)[_subId];
+        subToAbort.abort();
+        delete subId_watchObj_map_cacheReference[_subId];
+        updatedSubsForClient = allSubsForClient.filter(cachedSubId => cachedSubId !== _subId)
+  
+        if (!updatedSubsForClient || updatedSubsForClient.length === 0) {
+          delete clientId_subId_map_cacheClone[clientId]
+        } else {
+          clientId_subId_map_cacheClone[clientId] = updatedSubsForClient
+        }
+      }
+      cache.set(clientId_subId_map, clientId_subId_map_cacheClone);
+      cache.set(subId_watchObj_map, subId_watchObj_map_cacheReference);
+      cache.set(pathClientKey_subId_map, pathClientKey_subId_map_cacheClone);
     }
-    let updatedSubsForClient = []
-    if (
-      subId_watchObj_map_CLONE[_subId] &&
-      allSubsForClient.includes(_subId)
-    ) {
-      let subToAbort = cache.get(subId_watchObj_map)[_subId];
-      subToAbort.abort();
-      delete subId_watchObj_map_cacheReference[_subId];
-      updatedSubsForClient = allSubsForClient.filter(cachedSubId => cachedSubId !== _subId)
+  } catch (error) {
+    console.log('disconnectSpecificSocket: ' + error)
+  } 
 
-      if (!updatedSubsForClient || updatedSubsForClient.length === 0) {
-        delete clientId_subId_map_cacheClone[clientId]
-      } else {
-        clientId_subId_map_cacheClone[clientId] = updatedSubsForClient
-      }
-    }
-    cache.set(clientId_subId_map, clientId_subId_map_cacheClone);
-    cache.set(subId_watchObj_map, subId_watchObj_map_cacheReference);
-    cache.set(pathClientKey_subId_map, pathClientKey_subId_map_cacheClone);
-  }
 }
 
 function getWatchMap() {

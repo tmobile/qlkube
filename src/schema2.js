@@ -147,6 +147,7 @@ exports.deleteDeprecatedWatchPaths = (oas) => {
 };
 
 async function oasToGraphQlSchema(oas, kubeApiUrl) {
+  console.log('oas', oas)
   const { schema } = await createGraphQLSchema(oas, {
     baseUrl: kubeApiUrl,
     viewer: false,

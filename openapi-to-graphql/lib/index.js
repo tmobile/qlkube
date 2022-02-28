@@ -146,6 +146,8 @@ provideErrorExtensions, equivalentToMessages }) {
      * is easier for OpenAPI-to-GraphQL to use
      */
     const data = preprocessor_1.preprocessOas(oass, options);
+    // console.log('data', Object.keys(data))
+
     preliminaryChecks(options, data);
     // Query, Mutation, and Subscription fields
     let queryFields = {};
