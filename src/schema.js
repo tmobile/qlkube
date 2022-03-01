@@ -330,7 +330,11 @@ exports.createSchema = async (
   watchableNonNamespacePaths,
   mappedNamespacedPaths
 ) => {
-  // console.log('oas', oas)
+  // console.log('oas', oas.definitions)
+  // console.log('oas', Object.keys(oas))
+
+  //.paths details about each endpoint
+  //.definitions no clue but looks important
 
   const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl);
   // console.log('baseSchema', baseSchema)

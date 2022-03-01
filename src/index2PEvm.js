@@ -514,38 +514,50 @@ const connectWaitingSockets = (clusterUrl, serverUrl) => {
 }
 
 // GENERATES CLUSTER SCHEMA FOR NEW SERVERS
-const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
-  logger.debug('Generating cluster schema', kubeApiUrl)
-  const oasRaw = await getOpenApiSpec(kubeApiUrl, schemaToken);
-  // console.log('Generate Schema 1')
-  const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
-  // console.log('Generate Schema 2')
-  const subs = await getWatchables(oasWatchable);
-  // console.log('Generate Schema 3')
-  const oas = deleteWatchParameters(oasWatchable);
-  // console.log('Generate Schema 4')
-  const graphQlSchemaMap = await utilities.mapGraphQlDefaultPaths(oas);// takes a while
-  // console.log('Generate Schema 5');
-  if(graphQlSchemaMap.error){
-    // proabably an invalid zuth token
-    return graphQlSchemaMap;
+const generateClusterSchema = async(kubeApiUrl, schemaToken, emitterId) => {
+  try {
+    logger.debug('Generating cluster schema', kubeApiUrl);
+    const em = new events.EventEmitter();
+  
+    const oasRaw = await getOpenApiSpec(kubeApiUrl, schemaToken);
+    // console.log('Generate Schema 1')
+    const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
+    // console.log('Generate Schema 2')
+    const subs = await getWatchables(oasWatchable);
+    // console.log('Generate Schema 3')
+    const oas = deleteWatchParameters(oasWatchable);
+    // console.log('Generate Schema 4')
+    const graphQlSchemaMap = await utilities.mapGraphQlDefaultPaths(oas);// takes a while
+    // console.log('Generate Schema 5');
+    if(graphQlSchemaMap.error){
+      // proabably an invalid zuth token
+      return graphQlSchemaMap;
+    }
+    const k8PathKeys = Object.keys(oas.paths);
+    const mappedK8Paths = utilities.mapK8ApiPaths(
+      oas,
+      k8PathKeys,
+      graphQlSchemaMap
+    );
+    console.log('Generate Schema 6')
+    new Promise(async (resolve, reject) => {
+      const schema = createSchema(
+        oas,
+        kubeApiUrl,
+        mappedK8Paths,
+        subs.mappedWatchPath,
+        subs.mappedNamespacedPaths
+      ); // takes the longest
+      resolve(schema);
+
+    }).then((data) => em.emit(emitterId, 'finnnnn'))
+
+    console.log('Gen return emitter', emitterId)
+    return em;
+  } catch (error) {
+    
   }
-  const k8PathKeys = Object.keys(oas.paths);
-  const mappedK8Paths = utilities.mapK8ApiPaths(
-    oas,
-    k8PathKeys,
-    graphQlSchemaMap
-  );
-  console.log('Generate Schema 6')
-  const schema = await createSchema(
-    oas,
-    kubeApiUrl,
-    mappedK8Paths,
-    subs.mappedWatchPath,
-    subs.mappedNamespacedPaths
-  ); // takes the longest
-  // console.log('Generate Schema 7')
-  return schema;
+
 }
 
 // // GENERATES NEW GQL SERVER FOR SPECIFIC CLUSTER
@@ -753,7 +765,6 @@ const generateGqlServer2 = async(port=1111, schema) => {
   })
 
 }
-const _token= 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ik1yNS1BVWliZkJpaTdOZDFqQmViYXhib1hXMCJ9.eyJhdWQiOiI1YzllODJiNS03NzBiLTQ2NzYtYjZiOC0zNzU5ZDdiNGEwMmIiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vYmUwZjk4MGItZGQ5OS00YjE5LWJkN2ItYmM3MWEwOWIwMjZjL3YyLjAiLCJpYXQiOjE2NDYxNTI5MDksIm5iZiI6MTY0NjE1MjkwOSwiZXhwIjoxNjQ2MTU2ODA5LCJlbWFpbCI6IkRldHJpY2guVXR0aTFAVC1Nb2JpbGUuY29tIiwiZ3JvdXBzIjpbIkF0ZXJuaXR5IFVzZXJzIiwiTGljZW5zZV9XaW4xMF9SU0FUIEZ1bGwiLCJQR0hOLUlTQS1Mb2FkX0JhbGFuY2VyLVBSRCIsIk1vYmlsZUlyb25fRU5UIiwiUm9sZV9UTVVTX0ZURSIsIkxpY2Vuc2VfTWljcm9zb2Z0IE9mZmljZSAzNjUgeDg2IE9uLURlbWFuZCIsIlNBIE5vdGlmaWNhdGlvbnMiLCJMaWNlbnNlX01pY3Jvc29mdCBBenVyZSBFTVMiLCJBdGVybml0eSBFVFMiLCJSb2xlX1RlY2hub2xvZ3lfQWxsIiwiUmVsaWFuY2VXb3JrTG9nIiwiTGljZW5zZV9NYWtlIE1lIEFkbWluIEVucm9sbG1lbnQiLCJEcnV2YSBVc2VycyBXZXN0IiwiU3BsdW5rVmlld19BbGxVc2VycyIsIk9UX1RlY2hub2xvZ3lfQWxsIiwiRFNHX1dlYmJfRlRFIiwiTGljZW5zZV9EcnV2YSBJblN5bmMiLCJMaWNlbnNlX0RvY2tlciIsIkFwcERpc3RfUlNBVCBGdWxsIiwiQXBwRGlzdF9NaWNyb3NvZnQgT2ZmaWNlIDM2NSB4ODYgT24tRGVtYW5kIiwiQ2l0cml4X0NhcmVfUmVtb3RlQWNjZXNzIiwiVlBOLU5ldHdvcmstRUlUIiwiT0tUQV9BcHByZWNpYXRpb24tWm9uZSIsIkFsbG93IFdvcmtzdGF0aW9uIEVsZXZhdGlvbiIsIkFwcGRpc3RfRHJ1dmEgdXNlcnMgZXhjbHVkaW5nIEV4ZWNzIiwiVGVjaG5vbG9neV9STkVcdTAwMjZPXzIiLCJPVF9GVEUiLCJNSV9BcHBzX1ROYXRpb25fV3JhcHBlZCJdLCJuYW1lIjoiVXR0aSwgRGV0cmljaCIsIm5vbmNlIjoiMmQ5ZTZjNjctM2VjZC00M2EzLTkwMzYtYzliYTE1ZThiOTU2Iiwib2lkIjoiMTdkOTI5YjItNjkwNi00N2UwLThjYTktM2FiYjM5NzJiYzdiIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiRGV0cmljaC5VdHRpMUBULU1vYmlsZS5jb20iLCJyaCI6IjAuQVJNQUM1Z1B2cG5kR1V1OWU3eHhvSnNDYkxXQ25sd0xkM1pHdHJnM1dkZTBvQ3NUQU4wLiIsInN1YiI6IjJRUHljekFrcFAyaHRSUEVwU1lfLVR5SjlZNjZ3Wjc2VjQ0bWx6TVpOYlEiLCJ0aWQiOiJiZTBmOTgwYi1kZDk5LTRiMTktYmQ3Yi1iYzcxYTA5YjAyNmMiLCJ1dGkiOiI2dWJKczF0YnVrR0tyMkpDdzZQQ0FBIiwidmVyIjoiMi4wIiwic2FtYWNjb3VudG5hbWUiOiJkdXR0aTEifQ.itbm0D_KJofH8zwSv2YG-8oIPCYfuyWZfVCVaLL5DrHc3ntpBd6ntBj1YecFbY1Iqmf0sE0ykZjDMxafU0bZaEIL8wcXCmfEF22dJDQGJOjDStvyQNp8TakNs5MsJtZwnXW0IYR1xF4qND-kmJVf5SdPOCBmf1_4v5CYaeceRfbPkSTEy9AATfVRK4QtWYwIMiElK-sB1IDyflf9X7C8krzJ-akiPZ3L_qBf2_yUNBUrXPH0kMk_xy2gcXbEWWBqBMxSDYnayzX5UDrzFvrhLSz9BMWTQBFxhJ_3wYfRph2cv6R9AWH0tx7Xn-w0e2-AM3fGEECfWx0KRHq9izfdsA'
 
 const testWorker = () => {
   return new Promise((resolve, reject) => {
@@ -761,60 +772,21 @@ const testWorker = () => {
       workerData: {
         port: '1111',
         kubeApiUrl: 'https://east.npe.duck.master.kube.t-mobile.com:6443',
-        schemaToken: _token
+        schemaToken: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ik1yNS1BVWliZkJpaTdOZDFqQmViYXhib1hXMCJ9.eyJhdWQiOiI1YzllODJiNS03NzBiLTQ2NzYtYjZiOC0zNzU5ZDdiNGEwMmIiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vYmUwZjk4MGItZGQ5OS00YjE5LWJkN2ItYmM3MWEwOWIwMjZjL3YyLjAiLCJpYXQiOjE2NDYwNjU5ODAsIm5iZiI6MTY0NjA2NTk4MCwiZXhwIjoxNjQ2MDY5ODgwLCJlbWFpbCI6IkRldHJpY2guVXR0aTFAVC1Nb2JpbGUuY29tIiwiZ3JvdXBzIjpbIkF0ZXJuaXR5IFVzZXJzIiwiTGljZW5zZV9XaW4xMF9SU0FUIEZ1bGwiLCJQR0hOLUlTQS1Mb2FkX0JhbGFuY2VyLVBSRCIsIk1vYmlsZUlyb25fRU5UIiwiUm9sZV9UTVVTX0ZURSIsIkxpY2Vuc2VfTWljcm9zb2Z0IE9mZmljZSAzNjUgeDg2IE9uLURlbWFuZCIsIlNBIE5vdGlmaWNhdGlvbnMiLCJMaWNlbnNlX01pY3Jvc29mdCBBenVyZSBFTVMiLCJBdGVybml0eSBFVFMiLCJSb2xlX1RlY2hub2xvZ3lfQWxsIiwiUmVsaWFuY2VXb3JrTG9nIiwiTGljZW5zZV9NYWtlIE1lIEFkbWluIEVucm9sbG1lbnQiLCJEcnV2YSBVc2VycyBXZXN0IiwiU3BsdW5rVmlld19BbGxVc2VycyIsIk9UX1RlY2hub2xvZ3lfQWxsIiwiRFNHX1dlYmJfRlRFIiwiTGljZW5zZV9EcnV2YSBJblN5bmMiLCJMaWNlbnNlX0RvY2tlciIsIkFwcERpc3RfUlNBVCBGdWxsIiwiQXBwRGlzdF9NaWNyb3NvZnQgT2ZmaWNlIDM2NSB4ODYgT24tRGVtYW5kIiwiQ2l0cml4X0NhcmVfUmVtb3RlQWNjZXNzIiwiVlBOLU5ldHdvcmstRUlUIiwiT0tUQV9BcHByZWNpYXRpb24tWm9uZSIsIkFsbG93IFdvcmtzdGF0aW9uIEVsZXZhdGlvbiIsIkFwcGRpc3RfRHJ1dmEgdXNlcnMgZXhjbHVkaW5nIEV4ZWNzIiwiVGVjaG5vbG9neV9STkVcdTAwMjZPXzIiLCJPVF9GVEUiLCJNSV9BcHBzX1ROYXRpb25fV3JhcHBlZCJdLCJuYW1lIjoiVXR0aSwgRGV0cmljaCIsIm5vbmNlIjoiNzk4OWMxZTctNDY4YS00NTlhLTlkMTEtZjI1MjU4YjJlNjQxIiwib2lkIjoiMTdkOTI5YjItNjkwNi00N2UwLThjYTktM2FiYjM5NzJiYzdiIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiRGV0cmljaC5VdHRpMUBULU1vYmlsZS5jb20iLCJyaCI6IjAuQVJNQUM1Z1B2cG5kR1V1OWU3eHhvSnNDYkxXQ25sd0xkM1pHdHJnM1dkZTBvQ3NUQU4wLiIsInN1YiI6IjJRUHljekFrcFAyaHRSUEVwU1lfLVR5SjlZNjZ3Wjc2VjQ0bWx6TVpOYlEiLCJ0aWQiOiJiZTBmOTgwYi1kZDk5LTRiMTktYmQ3Yi1iYzcxYTA5YjAyNmMiLCJ1dGkiOiJVVkNhdDZ3SkZVZXUwTTZJUmFlT0FBIiwidmVyIjoiMi4wIiwic2FtYWNjb3VudG5hbWUiOiJkdXR0aTEifQ.kRkM11vzpoelDws90x5CaYrskCrp5p-ny9ZP4h8EyXmixM8KpIkFNL0uhEe7BLVrFAkH2usbHeFvhoPMLuxOOGx1-j4MNj3oYx3w5-KZjW2VPp_4o9FKQsHSfMZjFIMaHaa-EuhAL4ZLYtwCeCzSAdAo-UYKq2C9kAxYRtlH6FlBKSBZM-8DSJ9ymcpbalsYN22ye7Coy4x9YVmlEvrxrMBG9E-Ek1rTqOu9xkvjwFXLtYDZK1u_XBHjRGGe1p5LX79qWFnYuvDMyva6__R38YC0kBe75JA19XgO8uKgx5IAiPy6UlxdsujDO04gjrxOMRsowyb4DSGKdeAMO7N50Q'
       }
     });
     worker.on('message', async(msg) => {
-      // console.log(Object.keys(msg.schemaIntrospection.__schema.types));
-
       console.log(Object.keys(msg.schemaIntrospection.__schema));
-      // console.log(Object.keys(msg.schemaIntrospection.__schema.directives));
-      // console.log('return!', msg.subscriptions);
-      let subMap={};
-      for(let subObj of msg.subscriptions){
-        subMap[subObj.schemaType.toUpperCase()]= true;
+      console.log(Object.keys(msg.schemaIntrospection.__schema));
+      console.log('return!');
+      for(let gqltype of msg.schemaIntrospection.__schema.types){
+        console.log(gqltype.name)
+
+        // if(gqltype.name === 'heck'){
+        //   console.log(gqltype)
+        // }
+        
       }
-      rehydrateIntrospection(msg.schemaIntrospection, subMap, msg.paths);
-      //WHAT DO I NEED?
-      //All types
-      // Map from type to path
-      // request types
-      // arguments
-
-
-      // for(let gqltype of msg.schemaIntrospection.__schema.types){
-      //   // console.log(gqltype.name)
-      //   // ioK8sApiCoreV1PodList
-
-      //   if(gqltype.name.toUpperCase().includes(('query').toUpperCase())){
-      //     // console.log(gqltype)
-      //     console.log('a',Object.keys(gqltype))
-      //     gqltype.fields.forEach((fieldObj) => {
-      //       console.log(fieldObj.name)
-      //       if(fieldObj.name.toUpperCase().includes(('ioK8sApiAutoscalingV2beta2HorizontalPodAutoscaler').toUpperCase())){
-      //         console.log('FOUNDDDD',fieldObj)
-
-      //       }
-      //     })
-      //     // console.log('b', )
-          
-      //     // console.log(gqltype.fields)
-      //   }     
-        
-      //   // if(gqltype.name.toUpperCase().includes(('apiV1NamespacePodExec').toUpperCase())){
-      //   //   console.log(gqltype)
-      //   //   // console.log(gqltype.fields)
-      //   // }  
-      //   // if(gqltype.inputFields !== null){
-      //   //   console.log(gqltype)
-      //   //   // console.log(gqltype.fields)
-      //   // }
-      //   // if(gqltype.name.toUpperCase().includes(('metadata').toUpperCase())){
-      //   //   console.log(gqltype)
-      //   //   console.log(gqltype.fields)
-      //   // }
-        
-      // }
       // GENERATES NEW GQL SERVER FOR SPECIFIC CLUSTER
 
       // console.log('returned!', msg.schemaIntrospection);
@@ -828,12 +800,87 @@ const testWorker = () => {
       // console.log('mergedSchema', mergedSchema);
 
       // generateGqlServer2(1111, mergedSchema)
+    });
+    worker.on('message', resolve);
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0)
+        reject(new Error(`Worker stopped with exit code ${code}`));
+    });
+  });
 
-      // hydration idea
-      // get list of types
-      // for each type get args
-      // using args create resolver to hit api with args
-      
+};
+const _token= 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ik1yNS1BVWliZkJpaTdOZDFqQmViYXhib1hXMCJ9.eyJhdWQiOiI1YzllODJiNS03NzBiLTQ2NzYtYjZiOC0zNzU5ZDdiNGEwMmIiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vYmUwZjk4MGItZGQ5OS00YjE5LWJkN2ItYmM3MWEwOWIwMjZjL3YyLjAiLCJpYXQiOjE2NDYwNjU5ODAsIm5iZiI6MTY0NjA2NTk4MCwiZXhwIjoxNjQ2MDY5ODgwLCJlbWFpbCI6IkRldHJpY2guVXR0aTFAVC1Nb2JpbGUuY29tIiwiZ3JvdXBzIjpbIkF0ZXJuaXR5IFVzZXJzIiwiTGljZW5zZV9XaW4xMF9SU0FUIEZ1bGwiLCJQR0hOLUlTQS1Mb2FkX0JhbGFuY2VyLVBSRCIsIk1vYmlsZUlyb25fRU5UIiwiUm9sZV9UTVVTX0ZURSIsIkxpY2Vuc2VfTWljcm9zb2Z0IE9mZmljZSAzNjUgeDg2IE9uLURlbWFuZCIsIlNBIE5vdGlmaWNhdGlvbnMiLCJMaWNlbnNlX01pY3Jvc29mdCBBenVyZSBFTVMiLCJBdGVybml0eSBFVFMiLCJSb2xlX1RlY2hub2xvZ3lfQWxsIiwiUmVsaWFuY2VXb3JrTG9nIiwiTGljZW5zZV9NYWtlIE1lIEFkbWluIEVucm9sbG1lbnQiLCJEcnV2YSBVc2VycyBXZXN0IiwiU3BsdW5rVmlld19BbGxVc2VycyIsIk9UX1RlY2hub2xvZ3lfQWxsIiwiRFNHX1dlYmJfRlRFIiwiTGljZW5zZV9EcnV2YSBJblN5bmMiLCJMaWNlbnNlX0RvY2tlciIsIkFwcERpc3RfUlNBVCBGdWxsIiwiQXBwRGlzdF9NaWNyb3NvZnQgT2ZmaWNlIDM2NSB4ODYgT24tRGVtYW5kIiwiQ2l0cml4X0NhcmVfUmVtb3RlQWNjZXNzIiwiVlBOLU5ldHdvcmstRUlUIiwiT0tUQV9BcHByZWNpYXRpb24tWm9uZSIsIkFsbG93IFdvcmtzdGF0aW9uIEVsZXZhdGlvbiIsIkFwcGRpc3RfRHJ1dmEgdXNlcnMgZXhjbHVkaW5nIEV4ZWNzIiwiVGVjaG5vbG9neV9STkVcdTAwMjZPXzIiLCJPVF9GVEUiLCJNSV9BcHBzX1ROYXRpb25fV3JhcHBlZCJdLCJuYW1lIjoiVXR0aSwgRGV0cmljaCIsIm5vbmNlIjoiNzk4OWMxZTctNDY4YS00NTlhLTlkMTEtZjI1MjU4YjJlNjQxIiwib2lkIjoiMTdkOTI5YjItNjkwNi00N2UwLThjYTktM2FiYjM5NzJiYzdiIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiRGV0cmljaC5VdHRpMUBULU1vYmlsZS5jb20iLCJyaCI6IjAuQVJNQUM1Z1B2cG5kR1V1OWU3eHhvSnNDYkxXQ25sd0xkM1pHdHJnM1dkZTBvQ3NUQU4wLiIsInN1YiI6IjJRUHljekFrcFAyaHRSUEVwU1lfLVR5SjlZNjZ3Wjc2VjQ0bWx6TVpOYlEiLCJ0aWQiOiJiZTBmOTgwYi1kZDk5LTRiMTktYmQ3Yi1iYzcxYTA5YjAyNmMiLCJ1dGkiOiJVVkNhdDZ3SkZVZXUwTTZJUmFlT0FBIiwidmVyIjoiMi4wIiwic2FtYWNjb3VudG5hbWUiOiJkdXR0aTEifQ.kRkM11vzpoelDws90x5CaYrskCrp5p-ny9ZP4h8EyXmixM8KpIkFNL0uhEe7BLVrFAkH2usbHeFvhoPMLuxOOGx1-j4MNj3oYx3w5-KZjW2VPp_4o9FKQsHSfMZjFIMaHaa-EuhAL4ZLYtwCeCzSAdAo-UYKq2C9kAxYRtlH6FlBKSBZM-8DSJ9ymcpbalsYN22ye7Coy4x9YVmlEvrxrMBG9E-Ek1rTqOu9xkvjwFXLtYDZK1u_XBHjRGGe1p5LX79qWFnYuvDMyva6__R38YC0kBe75JA19XgO8uKgx5IAiPy6UlxdsujDO04gjrxOMRsowyb4DSGKdeAMO7N50Q'
+const testWorker2 = () => {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('./src/serverGen.js', {
+      workerData: {
+        port: '1112',
+        kubeApiUrl: 'https://east.npe.duck.master.kube.t-mobile.com:6443',
+        schemaToken: _token
+      }
+    });
+    worker.on('message', (msg) => {
+      // console.log(msg);
+      // GENERATES NEW GQL SERVER FOR SPECIFIC CLUSTER
+      const generateGqlServer = async(port=1111, schema) => {
+        // console.log('GEN NEW SERVER----', port);
+        return new Promise(async(resolve, reject) => {
+          // currentGeneratingServers[kubeApiUrl]= true
+          // const authTokenSplit = schemaToken.split(' ');
+          // const token = authTokenSplit[authTokenSplit.length - 1];
+          // const newSchema = await generateClusterSchema(kubeApiUrl, token);
+          if(!schema){
+            // delete currentGeneratingServers[kubeApiUrl]
+            // ## Ping main thread -> error
+            return schema;
+          }else{
+            let wsserver = await new WebSocketServer({
+              port: port,
+              path: '/gql'
+            });
+            await useServer({ 
+              schema: schema, 
+              context: ({req, connectionParams }) => {
+                const {
+                  authorization,
+                  clusterUrl,
+                  clientId,
+                  emitterId
+                }= connectionParams;
+          
+                return {
+                  authorization,
+                  clusterUrl,
+                  clientId,
+                  subId: Date.now().toString(36) + Math.random().toString(36).substr(2),
+                  emitterId,
+                  pubsub
+                }
+              }
+            }, wsserver);
+            console.log('GEN NEW SERVER COMPLETE++++++222222', port);
+
+            // ## PING MAIN THREAD -> complete
+            // delete currentGeneratingServers[kubeApiUrl];
+            // server gen is complete -> connect waiting sockets
+            // connectWaitingSockets(kubeApiUrl,  `ws://localhost:${port}/gql`);
+            // resolve ({
+            //   serverUrl: `ws://localhost:${port}/gql`,
+            //   serverObj: wsserver
+            // })
+            // parentPort.postMessage({
+            //   serverUrl: `ws://localhost:${port}/gql`,
+            //   serverObj: wsserver
+            // });
+
+          }
+        })
+
+      }
+      const newSchema = buildSchema(msg)
+      generateGqlServer(1112, newSchema)
+
     });
     worker.on('message', resolve);
     worker.on('error', reject);
@@ -845,44 +892,25 @@ const testWorker = () => {
 
 };
 
-const rehydrateIntrospection = (intsrpctn, subMap, paths) => {
-  for(let gqltype of intsrpctn.__schema.types){
-    // console.log(gqltype.name)
-    // ioK8sApiCoreV1PodList
 
-    // let subList=[];
-    // letQueryList=[];
-    // if(subMap[gqltype.name.toUpperCase()]){
-    //   // console.log('FOUND SUB', gqltype.name)
-    // }else{
-    //   console.log('NOT SUB', gqltype.name)
-    // }
-
-
-    // if(gqltype.name.toUpperCase().includes(('query').toUpperCase())){
-    //   // console.log(gqltype)
-    //   console.log('a',Object.keys(gqltype))
-    //   gqltype.fields.forEach((fieldObj) => {
-    //     console.log(fieldObj.name)
-    //     if(fieldObj.name.toUpperCase().includes(('ioK8sApiAutoscalingV2beta2HorizontalPodAutoscaler').toUpperCase())){
-    //       console.log('FOUNDDDD',fieldObj)
-
-    //     }
-    //   })
-    //   // console.log('b', )
-      
-    //   // console.log(gqltype.fields)
-    // }     
-    
-  }
+const testEmitter = async() => {
+  const em1 = await generateClusterSchema(
+    'https://east.npe.duck.master.kube.t-mobile.com:6443',
+    _token,
+    'test'
+  );
+  console.log('return', em1)
+  em1.on('test', data => {
+    console.log('data', data)
+    // ws?.send(JSON.stringify(data))
+  });
 }
 
 // serverStart();
-cache.set('test', 'test');
-console.log('oiiiiiiii', cache.get('test'));
-testWorker() // NODE WORKER CALL
+// cache.set('test', 'test');
+// console.log('oiiiiiiii', cache.get('test'));
+// testWorker() // NODE WORKER CALL
 // testWorker2()
 
-
-//TODO
-//how to handle get delete post etc same path different operations
+testEmitter()
+testEmitter()

@@ -66,7 +66,8 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
       schema:schema,
       subscriptions:mappedK8Paths,
       watchableNonNamespacePaths:subs.mappedWatchPath,
-      mappedNamespacedPaths:subs.mappedNamespacedPaths
+      mappedNamespacedPaths:subs.mappedNamespacedPaths,
+      paths: oas.paths
     }
     resolve(newData);
   })
@@ -87,14 +88,23 @@ if (isMainThread) {
     console.log('gettit')
     generateClusterSchema(kubeApiUrl, schemaToken)
       .then(async(data) => {
-        const { schema, subscriptions, watchableNonNamespacePaths, mappedNamespacedPaths } = data;
+        const { 
+          schema, 
+          subscriptions, 
+          watchableNonNamespacePaths, 
+          mappedNamespacedPaths,
+          paths
+        } = data;
         // console.log(
         //   'data',
-        //   schema,
-        //   subscriptions,
-        // watchableNonNamespacePaths,
-        // mappedNamespacedPaths 
+        //   Object.keys(schema),
         // )
+        // console.log(
+        //   'data',
+        //   schema._typeMap,
+        // )
+        // type map
+
         // const graphqlSchemaObj = introspectionFromSchema(schema);
         // const strigSchema = JSON.stringify(_schema);
         // const backTo = JSON.parse(strigSchema);
@@ -134,7 +144,8 @@ if (isMainThread) {
           schemaIntrospection,
           subscriptions,
           watchableNonNamespacePaths,
-          mappedNamespacedPaths
+          mappedNamespacedPaths,
+          paths
         });
 
 

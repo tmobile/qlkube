@@ -100,7 +100,7 @@ function processOperation(path, method, operationString, operationType, operatio
  * Extract information from the OAS and put it inside a data structure that
  * is easier for OpenAPI-to-GraphQL to use
  */
-function preprocessOas(oass, options) {
+async function preprocessOas(oass, options) {
     const data = {
         operations: {},
         callbackOperations: {},
@@ -127,8 +127,11 @@ function preprocessOas(oass, options) {
             data.options.report.numOpsSubscription = 0;
         }
         // Get security schemes
+        // ## Returns details about Bearer token
         const currentSecurity = getProcessedSecuritySchemes(oas, data);
+        // ## Returns empty Array
         const commonSecurityPropertyName = utils_1.getCommonPropertyNames(data.security, currentSecurity);
+        // ## Returns empty Array -> just logs?
         commonSecurityPropertyName.forEach((propertyName) => {
             utils_1.handleWarning({
                 mitigationType: utils_1.MitigationTypes.DUPLICATE_SECURITY_SCHEME,
@@ -140,14 +143,20 @@ function preprocessOas(oass, options) {
             });
         });
         // Do not overwrite preexisting security schemes
+        // ## Adds Bearer token details into data.security
         data.security = Object.assign(Object.assign({}, currentSecurity), data.security);
         let item=0;
         // Process all operations
+        // ## goes through each path
         for (let path in oas.paths) {
-            // console.log('processing', path, item++)
+            console.log('processing', path, item++)
+
+            // ## no paths have $ref ?
             const pathItem = !('$ref' in oas.paths[path])
                 ? oas.paths[path]
                 : Oas3Tools.resolveRef(oas.paths[path]['$ref'], oas);
+            
+            // ## goes trhough each get, delete, post etc... from fields for each path
             Object.keys(pathItem)
                 .filter((objectKey) => {
                 /**
@@ -155,9 +164,11 @@ function preprocessOas(oass, options) {
                  *
                  * Can also contain other fields such as summary or description
                  */
-                return Oas3Tools.isHttpMethod(objectKey);
-            })
+                const isHttpMethod = Oas3Tools.isHttpMethod(objectKey)
+                return isHttpMethod;
+            }) // ## check if has oass : security, k8 always has security -> combines path with request type
                 .forEach((rawMethod) => {
+                // ## reqtype + path string
                 const operationString = oass.length === 1
                     ? Oas3Tools.formatOperationString(rawMethod, path)
                     : Oas3Tools.formatOperationString(rawMethod, path, oas.info.title);
@@ -174,11 +185,14 @@ function preprocessOas(oass, options) {
                     });
                     return;
                 }
+                // ## refrence reuqest object from oas.paths[path]
+                // ## single out request from object, ie. object for get
                 const operation = pathItem[httpMethod];
                 let operationType = httpMethod === Oas3Tools.HTTP_METHODS.get
                     ? graphql_1.GraphQLOperationType.Query
                     : graphql_1.GraphQLOperationType.Mutation;
                 // Option selectQueryOrMutationField can override operation type
+                // ## we dont set option for this ?
                 if (typeof options.selectQueryOrMutationField === 'object' &&
                     typeof options.selectQueryOrMutationField[oas.info.title] ===
                         'object' &&
@@ -191,12 +205,15 @@ function preprocessOas(oass, options) {
                             ? graphql_1.GraphQLOperationType.Mutation
                             : graphql_1.GraphQLOperationType.Query;
                 }
+                // ## puts all previous details plus few extra into and object
                 const operationData = processOperation(path, httpMethod, operationString, operationType, operation, pathItem, oas, data, options);
                 if (operationData) {
                     /**
                      * Handle operationId property name collision
                      * May occur if multiple OAS are provided
                      */
+
+                    // ## adds operation data if operation id hasnt been cahced yet
                     if (operationData &&
                         !(operationData.operationId in data.operations)) {
                         data.operations[operationData.operationId] = operationData;
@@ -212,6 +229,7 @@ function preprocessOas(oass, options) {
                     }
                 }
                 // Process all callbacks
+                // ## we dont set this option
                 if (data.options.createSubscriptionsFromCallbacks &&
                     operation.callbacks) {
                     Object.entries(operation.callbacks).forEach(([callbackName, callback]) => {
@@ -240,6 +258,7 @@ function preprocessOas(oass, options) {
                                         log: preprocessingLog
                                     });
                                 }
+                                
                                 // Select only one of the operation object methods
                                 const callbackRawMethod = callbackOperationObjectMethods[0];
                                 const callbackOperationString = oass.length === 1
@@ -258,6 +277,8 @@ function preprocessOas(oass, options) {
                                     });
                                     return;
                                 }
+
+
                                 const callbackOperation = processOperation(callbackExpression, callbackHttpMethod, callbackOperationString, graphql_1.GraphQLOperationType.Subscription, resolvedCallbackPathItem[callbackHttpMethod], callbackPathItem, oas, data, options);
                                 if (callbackOperation) {
                                     /**
@@ -279,6 +300,8 @@ function preprocessOas(oass, options) {
                                         });
                                     }
                                 }
+
+
                             }
                         });
                     });

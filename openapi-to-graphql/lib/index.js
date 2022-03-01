@@ -102,7 +102,7 @@ exports.createGraphQLSchema = createGraphQLSchema;
 /**
  * Creates a GraphQL interface from the given OpenAPI Specification 3
  */
-function translateOpenAPIToGraphQL(oass, { strict, report, 
+async function translateOpenAPIToGraphQL(oass, { strict, report, 
 // Schema options
 operationIdFieldNames, fillEmptyResponses, addLimitArgument, idFormats, selectQueryOrMutationField, genericPayloadArgName, simpleNames, singularNames, createSubscriptionsFromCallbacks, 
 // Resolver options
@@ -145,7 +145,7 @@ provideErrorExtensions, equivalentToMessages }) {
      * Extract information from the OASs and put it inside a data structure that
      * is easier for OpenAPI-to-GraphQL to use
      */
-    const data = preprocessor_1.preprocessOas(oass, options);
+    const data = await preprocessor_1.preprocessOas(oass, options);
     // console.log('data', Object.keys(data))
 
     preliminaryChecks(options, data);
@@ -406,6 +406,7 @@ provideErrorExtensions, equivalentToMessages }) {
  * Creates the field object for the given operation.
  */
 function getFieldForOperation(operation, baseUrl, data, requestOptions, connectOptions) {
+    // console.log('operation', baseUrl)
     // Create GraphQL Type for response:
     const type = schema_builder_1.getGraphQLType({
         def: operation.responseDefinition,

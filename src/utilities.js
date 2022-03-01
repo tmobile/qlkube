@@ -4,7 +4,7 @@ const preprocessor_1 = require('../openapi-to-graphql/lib/preprocessor');
 const schema_builder_1 = require('../openapi-to-graphql/lib/schema_builder');
 const getDefaultGraphQlSchemaOptions = require('../model/schemaDefaultOptions');
 
-function mapGraphQlDefaultPaths(spec) {
+async function mapGraphQlDefaultPaths(spec) {
   options = getDefaultGraphQlSchemaOptions();
   return new Promise((resolve, reject) => {
     Oas3Tools.getValidOAS3(spec)
@@ -50,8 +50,8 @@ function mapK8ApiPaths(oas, pathNames, graphQlSchemaMap) {
     .filter((obj) => obj !== false));
 }
 
-function translateOpenAPIToGraphQLREV(oass, options) {
-  const data = preprocessor_1.preprocessOas(oass, options);
+async function translateOpenAPIToGraphQLREV(oass, options) {
+  const data = await preprocessor_1.preprocessOas(oass, options);
   let schemaTypeMap = {};
   Object.entries(data.operations).forEach(([operationId, operation]) => {
     // console.log(operation.responseDefinition?.targetGraphQLType)
