@@ -23,6 +23,7 @@ const customBaseSchema = {
     }
   })
 }
+
 const hasOuterWatch = (path) => {
   // check outer parameters of path
   if (path.parameters) {
@@ -119,6 +120,7 @@ exports.getWatchables = (oas) => {
  */
 exports.deleteWatchParameters = (oas) => {
   const newOAS = JSON.parse(JSON.stringify(oas)); // Javascript is wierd, this is deep copy.
+  // const newOAS = JSON.parse(JSON.stringify(oas, getCircularReplacer())); // Javascript is wierd, this is deep copy.
   for (const pathName in newOAS.paths) {
     const path = newOAS.paths[pathName];
     if (hasOuterWatch(path)) {
@@ -136,6 +138,19 @@ exports.deleteWatchParameters = (oas) => {
  * @param {object} oas The Open API Spec from k8s cluster
  */
 exports.deleteDeprecatedWatchPaths = (oas) => {
+  const getCircularReplacer = () => {
+    const seen = new WeakSet();
+    return (key, value) => {
+        if (typeof value === "object" && value !== null) {
+        if (seen.has(value)) {
+            return;
+        }
+        seen.add(value);
+        }
+        return value;
+    };
+  };
+  // const newOAS = JSON.parse(JSON.stringify(oas, getCircularReplacer())); // Javascript is wierd, this is deep copy.
   const newOAS = JSON.parse(JSON.stringify(oas)); // Javascript is wierd, this is deep copy.
   for (const pathName in newOAS.paths) {
     // don't include /watch/ paths since they are deprecated.
@@ -146,7 +161,7 @@ exports.deleteDeprecatedWatchPaths = (oas) => {
   return newOAS;
 };
 
-async function oasToGraphQlSchema(oas, kubeApiUrl) {
+async function oasToGraphQlSchema(oas, kubeApiUrl, finalOas) {
   const { schema } = await createGraphQLSchema(oas, {
     baseUrl: kubeApiUrl,
     viewer: false,
@@ -177,7 +192,7 @@ async function oasToGraphQlSchema(oas, kubeApiUrl) {
       'Content-Type': method === 'patch' ? 'application/merge-patch+json' : 'application/json',
       'Accept': 'application/json, */*'
     }),
-  });
+  }, finalOas);
   return schema;
 }
 
@@ -328,7 +343,8 @@ exports.createSchema = async (
   kubeApiUrl,
   subscriptions,
   watchableNonNamespacePaths,
-  mappedNamespacedPaths
+  mappedNamespacedPaths,
+  finalOas
 ) => {
   // console.log('oas', oas.definitions)
   // console.log('oas', Object.keys(oas))
@@ -336,7 +352,7 @@ exports.createSchema = async (
   //.paths details about each endpoint
   //.definitions no clue but looks important
 
-  const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl);
+  const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl, finalOas);
   // console.log('baseSchema', baseSchema)
   const schemas = [baseSchema];
   const pathMap = {};

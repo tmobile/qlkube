@@ -172,7 +172,11 @@ exports.countOperationsWithPayload = countOperationsWithPayload;
  * Resolves the given reference in the given object.
  */
 function resolveRef(ref, oas) {
+    // console.time('jsonptr.JsonPointer.get')
+    // const lol = 
+    // console.timeEnd('jsonptr.JsonPointer.get')
     return jsonptr.JsonPointer.get(oas, ref);
+
 }
 exports.resolveRef = resolveRef;
 /**

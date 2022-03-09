@@ -4,6 +4,11 @@ const { PubSub } = require('apollo-server-express');
 const { logger } = require('./log');
 const express = require('express');
 const cache = require('./cache/serverObjCache')();
+const blocked = require('blocked-at')
+
+const { introspectSchema, wrapSchema } = require('@graphql-tools/wrap')
+const { loadSchema } = require('@graphql-tools/load')
+const { UrlLoader } = require('@graphql-tools/url-loader')
 
 const {
   createSchema,
@@ -35,7 +40,9 @@ const pubsub = new PubSub();
 const serverCache = require('./cache/serverGenCache');
 const { default: cluster } = require('cluster');
 
-const serverGen = require('./serverGen')
+const serverGen = require('./serverGen');
+const SwaggerParser = require("@apidevtools/swagger-parser");
+
 //------
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
@@ -62,9 +69,9 @@ let currentGeneratingServers= {};
 let connectQueue= {};
 
 // Print servers and their sockets
-app.get('/stats', async(req, res) => {
-  checkServerConnections();
-});
+// app.get('/stats', async(req, res) => {
+//   checkServerConnections();
+// });
 
 // GQL QUERIES
 app.get('/gql', async(req, res) => {
@@ -514,14 +521,19 @@ const connectWaitingSockets = (clusterUrl, serverUrl) => {
 }
 
 // GENERATES CLUSTER SCHEMA FOR NEW SERVERS
-const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
+const generateClusterSchema = async(kubeApiUrl, schemaToken, finalOas) => {
   logger.debug('Generating cluster schema', kubeApiUrl)
   const oasRaw = await getOpenApiSpec(kubeApiUrl, schemaToken);
-  // console.log('Generate Schema 1')
+  // console.log('Generate Schema 1', oasRaw)
+  // let api = await SwaggerParser.dereference(oasRaw);
+  // let stringified = JSON.stringify(api)
+  console.log('Generate Schema 1')
+
+  // console.log('Generate Schema 1', api)
   const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
-  // console.log('Generate Schema 2')
+  console.log('Generate Schema 2')
   const subs = await getWatchables(oasWatchable);
-  // console.log('Generate Schema 3')
+  console.log('Generate Schema 3')
   const oas = deleteWatchParameters(oasWatchable);
   // console.log('Generate Schema 4')
   const graphQlSchemaMap = await utilities.mapGraphQlDefaultPaths(oas);// takes a while
@@ -537,6 +549,7 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
     graphQlSchemaMap
   );
   console.log('Generate Schema 6')
+
   const schema = await createSchema(
     oas,
     kubeApiUrl,
@@ -544,7 +557,7 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
     subs.mappedWatchPath,
     subs.mappedNamespacedPaths
   ); // takes the longest
-  // console.log('Generate Schema 7')
+  console.log('Generate Schema 7')
   return schema;
 }
 
@@ -753,10 +766,29 @@ const generateGqlServer2 = async(port=1111, schema) => {
   })
 
 }
-const _token= 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ik1yNS1BVWliZkJpaTdOZDFqQmViYXhib1hXMCJ9.eyJhdWQiOiI1YzllODJiNS03NzBiLTQ2NzYtYjZiOC0zNzU5ZDdiNGEwMmIiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vYmUwZjk4MGItZGQ5OS00YjE5LWJkN2ItYmM3MWEwOWIwMjZjL3YyLjAiLCJpYXQiOjE2NDYxNTI5MDksIm5iZiI6MTY0NjE1MjkwOSwiZXhwIjoxNjQ2MTU2ODA5LCJlbWFpbCI6IkRldHJpY2guVXR0aTFAVC1Nb2JpbGUuY29tIiwiZ3JvdXBzIjpbIkF0ZXJuaXR5IFVzZXJzIiwiTGljZW5zZV9XaW4xMF9SU0FUIEZ1bGwiLCJQR0hOLUlTQS1Mb2FkX0JhbGFuY2VyLVBSRCIsIk1vYmlsZUlyb25fRU5UIiwiUm9sZV9UTVVTX0ZURSIsIkxpY2Vuc2VfTWljcm9zb2Z0IE9mZmljZSAzNjUgeDg2IE9uLURlbWFuZCIsIlNBIE5vdGlmaWNhdGlvbnMiLCJMaWNlbnNlX01pY3Jvc29mdCBBenVyZSBFTVMiLCJBdGVybml0eSBFVFMiLCJSb2xlX1RlY2hub2xvZ3lfQWxsIiwiUmVsaWFuY2VXb3JrTG9nIiwiTGljZW5zZV9NYWtlIE1lIEFkbWluIEVucm9sbG1lbnQiLCJEcnV2YSBVc2VycyBXZXN0IiwiU3BsdW5rVmlld19BbGxVc2VycyIsIk9UX1RlY2hub2xvZ3lfQWxsIiwiRFNHX1dlYmJfRlRFIiwiTGljZW5zZV9EcnV2YSBJblN5bmMiLCJMaWNlbnNlX0RvY2tlciIsIkFwcERpc3RfUlNBVCBGdWxsIiwiQXBwRGlzdF9NaWNyb3NvZnQgT2ZmaWNlIDM2NSB4ODYgT24tRGVtYW5kIiwiQ2l0cml4X0NhcmVfUmVtb3RlQWNjZXNzIiwiVlBOLU5ldHdvcmstRUlUIiwiT0tUQV9BcHByZWNpYXRpb24tWm9uZSIsIkFsbG93IFdvcmtzdGF0aW9uIEVsZXZhdGlvbiIsIkFwcGRpc3RfRHJ1dmEgdXNlcnMgZXhjbHVkaW5nIEV4ZWNzIiwiVGVjaG5vbG9neV9STkVcdTAwMjZPXzIiLCJPVF9GVEUiLCJNSV9BcHBzX1ROYXRpb25fV3JhcHBlZCJdLCJuYW1lIjoiVXR0aSwgRGV0cmljaCIsIm5vbmNlIjoiMmQ5ZTZjNjctM2VjZC00M2EzLTkwMzYtYzliYTE1ZThiOTU2Iiwib2lkIjoiMTdkOTI5YjItNjkwNi00N2UwLThjYTktM2FiYjM5NzJiYzdiIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiRGV0cmljaC5VdHRpMUBULU1vYmlsZS5jb20iLCJyaCI6IjAuQVJNQUM1Z1B2cG5kR1V1OWU3eHhvSnNDYkxXQ25sd0xkM1pHdHJnM1dkZTBvQ3NUQU4wLiIsInN1YiI6IjJRUHljekFrcFAyaHRSUEVwU1lfLVR5SjlZNjZ3Wjc2VjQ0bWx6TVpOYlEiLCJ0aWQiOiJiZTBmOTgwYi1kZDk5LTRiMTktYmQ3Yi1iYzcxYTA5YjAyNmMiLCJ1dGkiOiI2dWJKczF0YnVrR0tyMkpDdzZQQ0FBIiwidmVyIjoiMi4wIiwic2FtYWNjb3VudG5hbWUiOiJkdXR0aTEifQ.itbm0D_KJofH8zwSv2YG-8oIPCYfuyWZfVCVaLL5DrHc3ntpBd6ntBj1YecFbY1Iqmf0sE0ykZjDMxafU0bZaEIL8wcXCmfEF22dJDQGJOjDStvyQNp8TakNs5MsJtZwnXW0IYR1xF4qND-kmJVf5SdPOCBmf1_4v5CYaeceRfbPkSTEy9AATfVRK4QtWYwIMiElK-sB1IDyflf9X7C8krzJ-akiPZ3L_qBf2_yUNBUrXPH0kMk_xy2gcXbEWWBqBMxSDYnayzX5UDrzFvrhLSz9BMWTQBFxhJ_3wYfRph2cv6R9AWH0tx7Xn-w0e2-AM3fGEECfWx0KRHq9izfdsA'
+const _token= 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ik1yNS1BVWliZkJpaTdOZDFqQmViYXhib1hXMCJ9.eyJhdWQiOiI1YzllODJiNS03NzBiLTQ2NzYtYjZiOC0zNzU5ZDdiNGEwMmIiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vYmUwZjk4MGItZGQ5OS00YjE5LWJkN2ItYmM3MWEwOWIwMjZjL3YyLjAiLCJpYXQiOjE2NDY0MTI0MDMsIm5iZiI6MTY0NjQxMjQwMywiZXhwIjoxNjQ2NDE2MzAzLCJlbWFpbCI6IkRldHJpY2guVXR0aTFAVC1Nb2JpbGUuY29tIiwiZ3JvdXBzIjpbIkF0ZXJuaXR5IFVzZXJzIiwiTGljZW5zZV9XaW4xMF9SU0FUIEZ1bGwiLCJQR0hOLUlTQS1Mb2FkX0JhbGFuY2VyLVBSRCIsIk1vYmlsZUlyb25fRU5UIiwiUm9sZV9UTVVTX0ZURSIsIkxpY2Vuc2VfTWljcm9zb2Z0IE9mZmljZSAzNjUgeDg2IE9uLURlbWFuZCIsIlNBIE5vdGlmaWNhdGlvbnMiLCJMaWNlbnNlX01pY3Jvc29mdCBBenVyZSBFTVMiLCJBdGVybml0eSBFVFMiLCJSb2xlX1RlY2hub2xvZ3lfQWxsIiwiUmVsaWFuY2VXb3JrTG9nIiwiTGljZW5zZV9NYWtlIE1lIEFkbWluIEVucm9sbG1lbnQiLCJEcnV2YSBVc2VycyBXZXN0IiwiU3BsdW5rVmlld19BbGxVc2VycyIsIk9UX1RlY2hub2xvZ3lfQWxsIiwiRFNHX1dlYmJfRlRFIiwiTGljZW5zZV9EcnV2YSBJblN5bmMiLCJMaWNlbnNlX0RvY2tlciIsIkFwcERpc3RfUlNBVCBGdWxsIiwiQXBwRGlzdF9NaWNyb3NvZnQgT2ZmaWNlIDM2NSB4ODYgT24tRGVtYW5kIiwiSURNX1ZQTl9PS1RBX01GQSIsIkNpdHJpeF9DYXJlX1JlbW90ZUFjY2VzcyIsIlZQTi1OZXR3b3JrLUVJVCIsIk9LVEFfQXBwcmVjaWF0aW9uLVpvbmUiLCJBbGxvdyBXb3Jrc3RhdGlvbiBFbGV2YXRpb24iLCJBcHBkaXN0X0RydXZhIHVzZXJzIGV4Y2x1ZGluZyBFeGVjcyIsIkFwcGRpc3RfSURNX1ZQTl9PS1RBX01GQSIsIlRlY2hub2xvZ3lfUk5FXHUwMDI2T18yIiwiT1RfRlRFIiwiTUlfQXBwc19UTmF0aW9uX1dyYXBwZWQiXSwibmFtZSI6IlV0dGksIERldHJpY2giLCJub25jZSI6IjU1OGRjNjJmLTMzM2ItNDE0Ny05NDhhLTg0ZjBhMWQ3ZWZkNSIsIm9pZCI6IjE3ZDkyOWIyLTY5MDYtNDdlMC04Y2E5LTNhYmIzOTcyYmM3YiIsInByZWZlcnJlZF91c2VybmFtZSI6IkRldHJpY2guVXR0aTFAVC1Nb2JpbGUuY29tIiwicmgiOiIwLkFSTUFDNWdQdnBuZEdVdTllN3h4b0pzQ2JMV0NubHdMZDNaR3RyZzNXZGUwb0NzVEFOMC4iLCJzdWIiOiIyUVB5Y3pBa3BQMmh0UlBFcFNZXy1UeUo5WTY2d1o3NlY0NG1sek1aTmJRIiwidGlkIjoiYmUwZjk4MGItZGQ5OS00YjE5LWJkN2ItYmM3MWEwOWIwMjZjIiwidXRpIjoicFZFdmZkR284a0tlTFlWTU9iQWdBQSIsInZlciI6IjIuMCIsInNhbWFjY291bnRuYW1lIjoiZHV0dGkxIn0.IZgXvJ1Y5Cu0OXFGQTMZHajAbT4hqvVj32esRvgBKbhEEetGEeMLFnYi7AWLIkw6X29EEWEONZ5lOFMOqmhLOHk8UrO7aMPX4ReDoe3oE45Cipn4JGY3cviRw8SuRUvYgX1w2OiLSWaz5nWhxBNZLvR2eZfQTKaWZpXO4TfbMSIhQtptehQIqj3q-zsbfySefGETM5EEU9cUJSe4RwfOIVKweoFsGlYNAMEtQv2JBq4BBVzO0a8Xixrefo0s5YKTT7PZBZyDU6AtkTi4ElnpKUbmt6qtTyr8NujTWiUHusuCQfwttzNl2hDWfz-r8HgxhHD4e8of0TrtcMu7yNbT4w'
+
 
 const testWorker = () => {
-  return new Promise((resolve, reject) => {
+  const executor = async ({ document, variables }) => {
+    const query = print(document)
+    const fetchResult = await fetch('http://example.com/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query, variables })
+    })
+    return fetchResult.json()
+  }
+
+  try {
+    const pingWorker = (_worker) => {
+      _worker.postMessage({destroyReferenceServer: true})
+  
+    }
+
+    
     const worker = new Worker('./src/serverGen.js', {
       workerData: {
         port: '1111',
@@ -764,84 +796,43 @@ const testWorker = () => {
         schemaToken: _token
       }
     });
+  
+  
     worker.on('message', async(msg) => {
-      // console.log(Object.keys(msg.schemaIntrospection.__schema.types));
+  
+      const {process, server_uri } = msg;
+      // load from endpoint
+      // const schema2 = await loadSchema(server_uri, {
+      //   loaders: [new UrlLoader()]
+      // })
+      // const schema = wrapSchema({
+      //   schema: await introspectSchema(schema2),
+      //   schema2
+      // })
 
-      console.log(Object.keys(msg.schemaIntrospection.__schema));
-      // console.log(Object.keys(msg.schemaIntrospection.__schema.directives));
-      // console.log('return!', msg.subscriptions);
-      let subMap={};
-      for(let subObj of msg.subscriptions){
-        subMap[subObj.schemaType.toUpperCase()]= true;
-      }
-      rehydrateIntrospection(msg.schemaIntrospection, subMap, msg.paths);
-      //WHAT DO I NEED?
-      //All types
-      // Map from type to path
-      // request types
-      // arguments
-
-
-      // for(let gqltype of msg.schemaIntrospection.__schema.types){
-      //   // console.log(gqltype.name)
-      //   // ioK8sApiCoreV1PodList
-
-      //   if(gqltype.name.toUpperCase().includes(('query').toUpperCase())){
-      //     // console.log(gqltype)
-      //     console.log('a',Object.keys(gqltype))
-      //     gqltype.fields.forEach((fieldObj) => {
-      //       console.log(fieldObj.name)
-      //       if(fieldObj.name.toUpperCase().includes(('ioK8sApiAutoscalingV2beta2HorizontalPodAutoscaler').toUpperCase())){
-      //         console.log('FOUNDDDD',fieldObj)
-
-      //       }
-      //     })
-      //     // console.log('b', )
-          
-      //     // console.log(gqltype.fields)
-      //   }     
-        
-      //   // if(gqltype.name.toUpperCase().includes(('apiV1NamespacePodExec').toUpperCase())){
-      //   //   console.log(gqltype)
-      //   //   // console.log(gqltype.fields)
-      //   // }  
-      //   // if(gqltype.inputFields !== null){
-      //   //   console.log(gqltype)
-      //   //   // console.log(gqltype.fields)
-      //   // }
-      //   // if(gqltype.name.toUpperCase().includes(('metadata').toUpperCase())){
-      //   //   console.log(gqltype)
-      //   //   console.log(gqltype.fields)
-      //   // }
-        
+      // if(process === 'server-gen'){
+      //   pingWorker(worker)
       // }
-      // GENERATES NEW GQL SERVER FOR SPECIFIC CLUSTER
-
-      // console.log('returned!', msg.schemaIntrospection);
-      // const newSchema = buildSchema(msg.schemaIntrospection);
-      // const mergedSchema = await testHydateSubscriptions(
-      //   newSchema,
-      //   msg.subscriptions,
-      //   msg.watchableNonNamespacePaths,
-      //   msg.mappedNamespacedPaths
-      // )
-      // console.log('mergedSchema', mergedSchema);
-
-      // generateGqlServer2(1111, mergedSchema)
-
-      // hydration idea
-      // get list of types
-      // for each type get args
-      // using args create resolver to hit api with args
-      
+      // resolve(msg)      
     });
-    worker.on('message', resolve);
-    worker.on('error', reject);
+    worker.on('error', (code) => {
+      throw `Worker stopped with exit code ${code}`
+    });
     worker.on('exit', (code) => {
       if (code !== 0)
-        reject(new Error(`Worker stopped with exit code ${code}`));
+        throw `Worker stopped with exit code ${code}`;
     });
-  });
+    // worker.postMessage({destroyReferenceServer: true})
+
+    // worker.postMessage({destroyReferenceServer: true})
+
+  } catch (error) {
+    console.log('error', error)
+  }
+
+
+
+
 
 };
 
@@ -877,11 +868,216 @@ const rehydrateIntrospection = (intsrpctn, subMap, paths) => {
   }
 }
 
-// serverStart();
-cache.set('test', 'test');
-console.log('oiiiiiiii', cache.get('test'));
+//REFERENCE MESSAGE
+// worker.on('message', async(msg) => {
+
+//   const message = msg;
+//   worker.postMessage({destroyReferenceServer: true})
+//   // console.log(Object.keys(msg.schemaIntrospection.__schema.types));
+//   // const fOas = await JSON.parse(msg.finalOas);
+//   // const parse_oass = await JSON.parse(msg.str_oas);
+//   // fOas.oass=parse_oass;
+//   // for(let operation of Object.keys(fOas.operations)){
+//   //   // const lol = fOas[operation];
+//   //   fOas.operations[operation]['oas']= parse_oass[0];
+//   // }
+//   // const schema = await createSchema(
+//   //   null,
+//   //   'https://east.npe.duck.master.kube.t-mobile.com:6443',
+//   //   msg.mappedK8Paths,
+//   //   msg.mappedWatchPath,
+//   //   msg.mappedNamespacedPaths,
+//   //   fOas
+//   // ); // takes the longest
+//   // console.log('Generate Schema 9000')
+//   // console.log('finalOas', msg.finalOas);
+//   // console.log(Object.keys(msg.schemaIntrospection.__schema.directives));
+//   // console.log('return!', msg.subscriptions);
+//   // let subMap={};
+//   // for(let subObj of msg.subscriptions){
+//   //   subMap[subObj.schemaType.toUpperCase()]= true;
+//   // }
+//   // rehydrateIntrospection(msg.schemaIntrospection, subMap, msg.paths);
+//   //WHAT DO I NEED?
+//   //All types
+//   // Map from type to path
+//   // request types
+//   // arguments
+
+
+//   // for(let gqltype of msg.schemaIntrospection.__schema.types){
+//   //   // console.log(gqltype.name)
+//   //   // ioK8sApiCoreV1PodList
+
+//   //   if(gqltype.name.toUpperCase().includes(('query').toUpperCase())){
+//   //     // console.log(gqltype)
+//   //     console.log('a',Object.keys(gqltype))
+//   //     gqltype.fields.forEach((fieldObj) => {
+//   //       console.log(fieldObj.name)
+//   //       if(fieldObj.name.toUpperCase().includes(('ioK8sApiAutoscalingV2beta2HorizontalPodAutoscaler').toUpperCase())){
+//   //         console.log('FOUNDDDD',fieldObj)
+
+//   //       }
+//   //     })
+//   //     // console.log('b', )
+      
+//   //     // console.log(gqltype.fields)
+//   //   }     
+    
+//   //   // if(gqltype.name.toUpperCase().includes(('apiV1NamespacePodExec').toUpperCase())){
+//   //   //   console.log(gqltype)
+//   //   //   // console.log(gqltype.fields)
+//   //   // }  
+//   //   // if(gqltype.inputFields !== null){
+//   //   //   console.log(gqltype)
+//   //   //   // console.log(gqltype.fields)
+//   //   // }
+//   //   // if(gqltype.name.toUpperCase().includes(('metadata').toUpperCase())){
+//   //   //   console.log(gqltype)
+//   //   //   console.log(gqltype.fields)
+//   //   // }
+    
+//   // }
+//   // GENERATES NEW GQL SERVER FOR SPECIFIC CLUSTER
+
+//   // console.log('returned!', msg.schemaIntrospection);
+//   // const newSchema = buildSchema(msg.schemaIntrospection);
+//   // const mergedSchema = await testHydateSubscriptions(
+//   //   newSchema,
+//   //   msg.subscriptions,
+//   //   msg.watchableNonNamespacePaths,
+//   //   msg.mappedNamespacedPaths
+//   // )
+//   // console.log('mergedSchema', mergedSchema);
+
+//   // generateGqlServer2(1111, mergedSchema)
+
+//   // hydration idea
+//   // get list of types
+//   // for each type get args
+//   // using args create resolver to hit api with args
+  
+// });
+
+
+
+const flattenSchema = () => {
+
+}
+
+
+// cache.set('test', 'test');
+// console.log('oiiiiiiii', cache.get('test'));
 testWorker() // NODE WORKER CALL
 // testWorker2()
+
+// Resolve Refs R&D
+// generateClusterSchema(
+//   'https://east.npe.duck.master.kube.t-mobile.com:6443',
+//   _token
+// )
+
+// generateClusterSchema(
+//   'https://east.npe.duck.master.kube.t-mobile.com:6443',
+//   _token
+// )
+
+
+
+app.get('/gen', async(req, res) => {
+
+  // new Promise((resolve, reject) => {
+  //   generateClusterSchema(
+  //     'https://east.npe.duck.master.kube.t-mobile.com:6443',
+  //     _token
+  //   )
+  // })
+  console.log('HIT!')
+  const schema2 = await loadSchema('http://localhost:9090/gql', {
+    loaders: [new UrlLoader()]
+  })
+  // const schema = wrapSchema({
+  //   schema: await introspectSchema(schema2),
+  //   schema2
+  // })
+  res.send('generating!')
+});
+
+
+const testImmediate = async() => {
+  return new Promise((resolve, reject) => {
+    setImmediate(() => {
+      console.log('Start 1')
+      const lol = 4000000000;
+      let iter=0;
+      while(iter < lol){
+        iter++
+      }
+      console.log('End 1')
+  
+      setImmediate(() => {
+        console.log('Start 2')
+    
+        const lol = 4000000000;
+        let iter=0;
+        while(iter < lol){
+          iter++
+        }
+        
+        console.log('yay 2')
+        resolve('wow')
+      })
+    });
+  })
+
+}
+app.get('/stats', async(req, res) => {
+
+
+  testImmediate().then((data) => res.send(data))
+
+
+
+  // new Promise((resolve, reject) => {
+  //   console.log('Start 3')
+
+  //   const lol = 4000000000;
+  //   let iter=0;
+  //   while(iter < lol){
+  //     iter++
+  //   }
+  //   resolve()
+    
+  // }).then(() => {
+  //   console.log('yay 3')
+  // })
+
+  // new Promise((resolve, reject) => {
+  //   console.log('Start 4')
+  
+  //   const lol = 4000000000;
+  //   let iter=0;
+  //   while(iter < lol){
+  //     iter++
+  //   }
+  //   resolve()
+    
+  // }).then(() => {
+  //   console.log('yay 4')
+  // })
+  
+
+});
+
+
+// });
+
+
+// blocked((time, stack) => {
+//   console.log(`Blocked for ${time}ms, operation started here:`, stack)
+// })
+
+serverStart();
 
 
 //TODO

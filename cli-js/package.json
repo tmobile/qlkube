@@ -1,0 +1,33 @@
+{
+  "name": "cli-js",
+  "version": "0.0.8",
+  "author": "Jeff Escalante",
+  "dependencies": {
+    "fuzzy": "0.1.x",
+    "lodash": "1.2.x",
+    "colors": "0.6.x",
+    "copy-paste": "0.0.x",
+    "async": "0.2.x",
+    "request": "2.21.x"
+  },
+  "devDependencies": {
+    "mocha": "latest",
+    "should": "latest",
+    "coffee-script": "latest",
+    "rimraf": "latest"
+  },
+  "scripts": {
+    "test": "mocha test"
+  },
+  "bin": {
+    "cdnjs": "bin/cdnjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/jenius/cli-js.git"
+  },
+  "engines": {
+    "node": ">=0.8.x"
+  },
+  "preferGlobal": true
+}
