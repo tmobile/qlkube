@@ -1,48 +1,20 @@
-const cors = require('cors');
-require('dotenv').config();
-const { PubSub } = require('apollo-server-express');
-const { logger } = require('./log');
 const express = require('express');
-const cache = require('./cache/serverObjCache')();
-const blocked = require('blocked-at')
+const nodeFs = require('fs');
+require('dotenv').config();
+const { logger } = require('./log');
+const cors = require('cors');
 
-const { introspectSchema, wrapSchema } = require('@graphql-tools/wrap')
-const { loadSchema } = require('@graphql-tools/load')
-const { UrlLoader } = require('@graphql-tools/url-loader')
-
-const {
-  createSchema,
-  getWatchables,
-  deleteDeprecatedWatchPaths,
-  deleteWatchParameters,
-  testHydateSubscriptions
-} = require('./schema');
-const {
-  Worker, isMainThread, parentPort, workerData
-} = require('worker_threads');
-
-const utilities = require('./utilities');
-const getOpenApiSpec = require('./oas');
-const path = require('path');
-
-//------
-const ws = require('ws'); // yarn add ws
+const { Worker } = require('worker_threads');
 const wsServer = require('http').createServer();
 const WebSocketServer  = require('ws').Server; // yarn add ws
 const wss = new WebSocketServer({ server: wsServer });
-const { useServer }  = require('graphql-ws/lib/use/ws');
-const { createClient } = require('graphql-ws');
-const bodyParser = require('body-parser');
-var events = require('events');
-const Crypto = require('crypto');
-var process = require('process')
-const pubsub = new PubSub();
-// const serverCache = require('./cache/serverGenCache');
-const serverCache = require('./cache/serverCache');
-const { default: cluster } = require('cluster');
+const path = require('path')
 
-const serverGen = require('./serverGen');
-const SwaggerParser = require("@apidevtools/swagger-parser");
+//------
+
+const bodyParser = require('body-parser');
+var process = require('process')
+const serverCache = require('./cache/serverCache');
 
 const { connectSub, connectQuery } = require('./utils/internalServerConnect');
 const { workerProcesseesEnum, workerCommandEnum } = require('./enum/workerEnum')
@@ -57,25 +29,13 @@ let internalSubObjMap={}
 let clientToInternalSubIdMap={};
 let rougeSocketMap={};
 
-const INTRNL_SOCKET_END_TIMEOUT= 120000;
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
-const {
-  printSchema,
-  buildSchema,
-  buildClientSchema,
-  printIntrospectionSchema,
-  introspectionFromSchema,
-} = require('graphql');
+
 let currentGeneratingServers= [];
 let pre_connectClientQueue= {};
 let connectClientQueue= {};
-
-// Print servers and their sockets
-// app.get('/stats', async(req, res) => {
-//   checkServerConnections();
-// });
 
 let WORKER_MAP= {};
 // GQL QUERIES
@@ -119,10 +79,7 @@ app.get('/gql', async(req, res) => {
 
 });
 
-app.get('/mt', (req, res) => {
-  res.send('multi thread babayyyy')
 
-});
 
 const requestTypeEnum={
   subscribe: 'subscribe',
@@ -139,7 +96,8 @@ setInterval(() => {
   // console.log('Servers', Object.keys(serverCache.servers))
   // // console.log('Servers', serverCache.servers)
   // console.log('internalSubObjMap', internalSubObjMap)
-  // console.log('clientToInternalSubIdMap', clientToInternalSubIdMap)
+  // console.log('clientToInternalSubIdMap', clientToInternalSubIdMap) 	branch = feature/qlkube2
+
   // console.log('clientInternalWsMap', clientInternalWsMap)
   console.log('clientToInternalSubIdMap',clientToInternalSubIdMap)
   for(let idk of Object.keys(clientToInternalSubIdMap)){
@@ -932,6 +890,12 @@ const createWorker = () => {
   }
 };
 
+
+const versionJSON = nodeFs.readFileSync(path.join(__dirname, '../public/health.json')).toString();
+app.get('/health', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(versionJSON);
+});
 
 // BASE SERVER STARTUP
 const serverStart = async() => {
