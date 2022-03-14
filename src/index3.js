@@ -249,11 +249,13 @@ const destroySpeifiedInternalWebsocket = (clientSubId, clientId) => {
       if(internalSubObj){
         setTimeout(() => {
           console.log('DSIPOSE - dest intrnl ', clientSubId)
-          internalSubObj?.dispose();
-          delete internalSubObjMap[internalSocketId];
-          delete clientToInternalSubIdMap[clientSubId];
-          const filteredClientInternalWs= clientInternalWsMap[clientId].filter((intsbid) => intsbid !== internalSocketId);
-          clientInternalWsMap[clientId]= filteredClientInternalWs;
+          if(clientInternalWsMap?.[clientId]){
+            internalSubObj?.dispose();
+            delete internalSubObjMap[internalSocketId];
+            delete clientToInternalSubIdMap[clientSubId];
+            const filteredClientInternalWs= clientInternalWsMap[clientId].filter((intsbid) => intsbid !== internalSocketId);
+            clientInternalWsMap[clientId]= filteredClientInternalWs;
+          }
         }, 25000)
 
       }else{
