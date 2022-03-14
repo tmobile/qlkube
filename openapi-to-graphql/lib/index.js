@@ -408,8 +408,8 @@ provideErrorExtensions, equivalentToMessages }, finalOas) {
         }
     });
     const schema = new graphql_2.GraphQLSchema(schemaConfig);
-    var allEnd = performance.now();
-    console.timeEnd('translateOpenAPIToGraphQL')
+    // var allEnd = performance.now();
+    // console.timeEnd('translateOpenAPIToGraphQL')
     return { schema, report: options.report };
 }
 /**

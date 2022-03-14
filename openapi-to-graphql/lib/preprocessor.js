@@ -213,10 +213,10 @@ async function preprocessOas(oass, options) {
                 try {
                     // console.time('methodToHttpMethod')
                     //0.00083s
-                    var methodToHttpMethod_start = performance.now();
+                    // var methodToHttpMethod_start = performance.now();
                     httpMethod = oas_3_tools_1.methodToHttpMethod(rawMethod);
-                    var methodToHttpMethod_end = performance.now();
-                    methodToHttpMethod_totaltime += methodToHttpMethod_end-methodToHttpMethod_start;
+                    // var methodToHttpMethod_end = performance.now();
+                    // methodToHttpMethod_totaltime += methodToHttpMethod_end-methodToHttpMethod_start;
                     // console.timeEnd('methodToHttpMethod')
 
                 }
@@ -255,10 +255,10 @@ async function preprocessOas(oass, options) {
                 // ## puts all previous details plus few extra into and object
                 // 39.062ms - 0.004ms -> 2.1541047000037508s total
                 // console.time('processOperation')
-                var processOperation_start = performance.now();
+                // var processOperation_start = performance.now();
                 const operationData = processOperation(path, httpMethod, operationString, operationType, operation, pathItem, oas, data, options);
-                var processOperation_end = performance.now();
-                processOperation_totaltime += (processOperation_end - processOperation_start)
+                // var processOperation_end = performance.now();
+                // processOperation_totaltime += (processOperation_end - processOperation_start)
                 // console.timeEnd('processOperation')
 
                 if (operationData) {
