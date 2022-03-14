@@ -228,7 +228,7 @@ else {
 
       console.log('WORKER_MEM_USAGE', process.memoryUsage().heapTotal/1000000)
       checkServerConnections()
-    }, 5000) 
+    }, 25000) 
 
   }
 

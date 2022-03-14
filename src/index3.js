@@ -88,24 +88,24 @@ const requestTypeEnum={
   query_ping: 'query_ping'
 };
 
-setInterval(() => {
-  // console.log(' ')
-  // console.log(' ')
-  // console.log(' ')
+// setInterval(() => {
+//   // console.log(' ')
+//   // console.log(' ')
+//   // console.log(' ')
 
-  // console.log('Servers', Object.keys(serverCache.servers))
-  // // console.log('Servers', serverCache.servers)
-  // console.log('internalSubObjMap', internalSubObjMap)
-  // console.log('clientToInternalSubIdMap', clientToInternalSubIdMap) 	branch = feature/qlkube2
+//   // console.log('Servers', Object.keys(serverCache.servers))
+//   // // console.log('Servers', serverCache.servers)
+//   // console.log('internalSubObjMap', internalSubObjMap)
+//   // console.log('clientToInternalSubIdMap', clientToInternalSubIdMap) 	branch = feature/qlkube2
 
-  // console.log('clientInternalWsMap', clientInternalWsMap)
-  console.log('clientToInternalSubIdMap',clientToInternalSubIdMap)
-  for(let idk of Object.keys(clientToInternalSubIdMap)){
-    // console.log('--', idk, clientToInternalSubIdMap[idk]?.length)
-  }
-  console.log('MEM_USAGE', process.memoryUsage().heapTotal/1000000)
-  // checkServerConnections()
-}, 20000) 
+//   // console.log('clientInternalWsMap', clientInternalWsMap)
+//   console.log('clientToInternalSubIdMap',clientToInternalSubIdMap)
+//   for(let idk of Object.keys(clientToInternalSubIdMap)){
+//     // console.log('--', idk, clientToInternalSubIdMap[idk]?.length)
+//   }
+//   console.log('MEM_USAGE', process.memoryUsage().heapTotal/1000000)
+//   // checkServerConnections()
+// }, 20000) 
 
 
 
@@ -322,9 +322,9 @@ const workerProcessStatusEnum = {
 
 
 const checkWorkersForServer = (serverId) => {
-  console.log('worker_servers_map', worker_servers_map)
+  // console.log('worker_servers_map', worker_servers_map)
   for(let [workerId, servers] of Object.entries(worker_servers_map)){
-    console.log(workerId, servers)
+    // console.log(workerId, servers)
 
     if(servers&&servers?.includes(serverId)){
       return {
@@ -359,6 +359,7 @@ const genServerHandler = async(
   ws,
   queryCallback
 ) => {
+  console.log('genServerHandler !')
 
     addConnectionToConnectQueue(
       reqType,
