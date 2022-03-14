@@ -38,6 +38,8 @@ let internalServerReference= {};
 let clusterUrl_ServerUrl_map= {};
 const pubsub = new PubSub();
 
+
+
 const generateGqlServer2 = async(port, schema) => {
     if(!schema||!port){
       return {
@@ -195,6 +197,18 @@ const commandHandler = async (message) => {
   }
 }
 
+const checkServerConnections = () => {
+  for(let serverUrl of Object.keys(internalServerReference)){
+    let socketCount=0;
+    internalServerReference[serverUrl].clients?.forEach((socket) => {
+      socketCount++;
+    });
+    // if(socketCount > 0){
+    //   serverCache.refreshServerUsage(clusterUrl)
+    // }
+    // console.log('SERVER---', serverUrl, socketCount);
+  }
+}
 if (isMainThread) {} 
 else {
 
@@ -210,6 +224,12 @@ else {
       process: workerProcesseesEnum.init,
       processDetails: {}
     });
+    setInterval(() => {
+
+      console.log('WORKER_MEM_USAGE', process.memoryUsage().heapTotal/1000000)
+      checkServerConnections()
+    }, 5000) 
+
   }
 
   // if(port&&kubeApiUrl&&schemaToken){

@@ -13,7 +13,7 @@ const connectSub = (
     pairSubToClient
 ) => {
     try {
-      // console.log('CONECTING TO', internalServerUrl, query);
+      console.log('CONECTING TO', connectionParams.clientSubId);
       const em = new events.EventEmitter();
       const client = createClient({
         url: internalServerUrl,
@@ -30,25 +30,28 @@ const connectSub = (
       });
   
       (async () => {
-        const onNext = (val) => {
-          // console.log('recieved', val)
-          em.emit(emitterId, val);
-        };
-        await client.subscribe(
-          {
-            query: query,
-          },
-          {
-            next: onNext,
-            error: (er) => console.log('Subscription error!' ,er),
-            complete: (er) => console.log('Subscription complete!', connectionParams.clientSubId),
-            onclose: () => console.log('onclose '),
-            
-          },
-        );
-        const internalSubId = Date.now().toString(36) + Math.random().toString(36).substr(2);
-        pairSubToClient(clientId, client, internalSubId, connectionParams.clientSubId)
-      })();
+            const onNext = (val) => {
+                // console.log('recieved', val)
+                em.emit(emitterId, val);
+              };
+              await client.subscribe(
+                {
+                  query: query,
+                },
+                {
+                  next: onNext,
+                  error: (er) => console.log('Subscription error!' ,er),
+                //   complete: () => console.log('Subscription complete!', connectionParams.clientSubId),
+                  complete: () => console.log('Subscription complete!', connectionParams.clientSubId),
+                  onclose: () => console.log('onclose '),
+                  
+                },
+              );
+              const internalSubId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+              pairSubToClient(clientId, client, internalSubId, connectionParams.clientSubId)
+
+
+      })().catch(e => console.log('error...', e));
   
       return em;
     } catch (error) {
@@ -87,7 +90,7 @@ const connectQuery = async(internalServerUrl, query, connectionParams) => {
           }
         )
       })
-    })()
+    })().catch(e => console.log('error...', e))
     return wow;
   }
 

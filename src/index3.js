@@ -97,9 +97,8 @@ app.get('/gql', async(req, res) => {
           const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams);
           console.log('queryResponse', queryResponse)
           res.write(JSON.stringify({
-            data: {
-              status: queryResponse
-            }
+            data:  queryResponse,
+            status: 'complete'
           }));
           res.end()
         }
@@ -117,75 +116,6 @@ app.get('/gql', async(req, res) => {
         queryCallbacks
       ) 
     }
-  // const { requesttype }= req?.headers;
-  // const handleQuery = async(clusterUrl, query, connectionParams) => {
-  //     let hasNext=false;
-  //     const { gqlServerUrl } = serverCache.getServer(clusterUrl)
-  //     const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams);
-  //     console.log('queryResponse', queryResponse)
-  //     res.send({
-  //       data: {
-  //         status: queryResponse
-  //       }
-  //     })
-  // }
-
-
-
-  // const testCallback = async(clusterUrl, query, connectionParams) => {
-  //   res.write(JSON.stringify({
-  //     status: 'generating'
-  //   }))
-  //   // res.status(111)
-  //   setTimeout(() => {
-  //     res.end(JSON.stringify({
-  //       data: 'yeee buddy',
-  //       status: 'complete'
-  //     }))
-
-  //   }, 2000)
-  // } 
-
-
-  // if(req?.headers?.connectionparams){
-  //   const queryParams= JSON.parse(req?.headers?.connectionparams);
-  //   const { query, authorization, clusterUrl }= queryParams;
-  //   if(requesttype === 'query_ping'){
-  //     console.log('query_ping')
-  //     const serverStatus= await gqlServerRouter(
-  //       null,
-  //       clusterUrl,
-  //       null,
-  //       null,
-  //       authorization,
-  //       query,
-  //       queryParams,
-  //       requestTypeEnum.query_ping
-  //     ) 
-  //     console.log('query_ping',serverStatus)
-      
-  //     res.send({
-  //       data: {
-  //         status: serverStatus
-  //       }
-  //     })
-  //   }else if(requesttype === 'query'){
-
-  //     const queryResponse= await gqlServerRouter(
-  //       null,
-  //       clusterUrl,
-  //       null,
-  //       null,
-  //       authorization,
-  //       query,
-  //       queryParams,
-  //       requestTypeEnum.query
-  //     ) 
-  //     res.send({
-  //       ...queryResponse
-  //     })
-  //   }
-  // }
 
 });
 
@@ -211,10 +141,13 @@ setInterval(() => {
   // console.log('internalSubObjMap', internalSubObjMap)
   // console.log('clientToInternalSubIdMap', clientToInternalSubIdMap)
   // console.log('clientInternalWsMap', clientInternalWsMap)
-  // console.log('portQueue', serverCache.portQueue)
-  // console.log('MEM_USAGE', process.memoryUsage().heapTotal/1000000)
+  console.log('clientToInternalSubIdMap',clientToInternalSubIdMap)
+  for(let idk of Object.keys(clientToInternalSubIdMap)){
+    // console.log('--', idk, clientToInternalSubIdMap[idk]?.length)
+  }
+  console.log('MEM_USAGE', process.memoryUsage().heapTotal/1000000)
   // checkServerConnections()
-}, 5000) 
+}, 20000) 
 
 
 
@@ -241,6 +174,16 @@ const checkServerConnections = () => {
 // Keep track of client -> sub id
 // Keep track of Subid -> internal sub obj
 const pairSubToClient = (clientId, subObj, internalSubId, clientSubId) => {
+  if(rougeSocketMap[clientSubId]){
+    setTimeout(() => {
+      console.log('DISPOSE - psc', clientSubId)
+      subObj.dispose();
+      delete rougeSocketMap[clientSubId]
+    }, 20000)
+
+    return;
+  }
+
   internalSubObjMap[internalSubId]= subObj;
   clientToInternalSubIdMap[clientSubId]= internalSubId;
   if(!clientInternalWsMap[clientId]){
@@ -269,7 +212,7 @@ wss.on('connection', function connection(ws) {
       if(requestType === requestTypeEnum.subscribe){
         ws.clientId= clientId;
         // logger.debug('Internal ws subscribe request from', connectionParams.clientId);
-
+        console.log('+++++++++++++', connectionParams.clientSubId)
         if(
           connectionParams?.clusterUrl&&
           clientId&&
@@ -294,6 +237,8 @@ wss.on('connection', function connection(ws) {
 
       // END INTERNAL SOCKET
       else if(requestType === requestTypeEnum.close){
+        console.log('-------------', connectionParams.clientSubId)
+
         destroySpeifiedInternalWebsocket(connectionParams.clientSubId, connectionParams.clientId);
       }
     } catch (error) {
@@ -338,20 +283,26 @@ wss.on('connection', function connection(ws) {
 // ENDS SPECIFIC INTERNAL SUB FOR CLIENT
 const destroySpeifiedInternalWebsocket = (clientSubId, clientId) => {
   try {
-    setTimeout(() => {
+    // setTimeout(() => {
       console.log('Closing internal ws', clientSubId)
 
       const internalSocketId= clientToInternalSubIdMap[clientSubId];
       const internalSubObj = internalSubObjMap[internalSocketId];
       if(internalSubObj){
-        internalSubObj?.dispose();
-        delete internalSubObjMap[internalSocketId];
-        delete clientToInternalSubIdMap[clientSubId];
-        const filteredClientInternalWs= clientInternalWsMap[clientId].filter((intsbid) => intsbid !== internalSocketId);
-        clientInternalWsMap[clientId]= filteredClientInternalWs;
+        setTimeout(() => {
+          console.log('DSIPOSE - dest intrnl ', clientSubId)
+          internalSubObj?.dispose();
+          delete internalSubObjMap[internalSocketId];
+          delete clientToInternalSubIdMap[clientSubId];
+          const filteredClientInternalWs= clientInternalWsMap[clientId].filter((intsbid) => intsbid !== internalSocketId);
+          clientInternalWsMap[clientId]= filteredClientInternalWs;
+        }, 25000)
+
+      }else{
+        rougeSocketMap[clientSubId]= clientId;
       }
 
-    }, INTRNL_SOCKET_END_TIMEOUT)
+    // }, INTRNL_SOCKET_END_TIMEOUT)
 
   } catch (error) {
     console.log('destroySpeifiedInternalWebsocket ' + error )
@@ -359,29 +310,36 @@ const destroySpeifiedInternalWebsocket = (clientSubId, clientId) => {
 
 }
 
+const checkAndRemoveWaitingConnection = () => {
+  for(let clstrUrl of connectClientQueue){
+
+  }
+}
+
 // ENDS ALL CACHED ROUTING DATA FOR CLIENT
 const destroyCachedDataForClient = (wsId) => {
   try {
-    setTimeout(() => {
+    // setTimeout(() => {
       logger.debug('Internal ws close request from', wsId)
-      // let internalSubsForClient=[];
-      // if(wsId&&!clientInternalWsMap?.[wsId]?.length > 0){
-      //   for(let cachedInternalSubId of clientInternalWsMap[wsId]){
-      //     internalSubObjMap[cachedInternalSubId].dispose();
-      //     delete internalSubObjMap[cachedInternalSubId];
-      //     internalSubsForClient.push(cachedInternalSubId);
-      //   };
-      //   delete clientInternalWsMap[wsId];
-      // }
+      let internalSubsForClient=[];
+      const checker= clientInternalWsMap?.[wsId]
+      if(wsId&&clientInternalWsMap?.[wsId]?.length > 0){
+        for(let cachedInternalSubId of clientInternalWsMap[wsId]){
+          internalSubObjMap[cachedInternalSubId].dispose();
+          delete internalSubObjMap[cachedInternalSubId];
+          internalSubsForClient.push(cachedInternalSubId);
+        };
+        delete clientInternalWsMap[wsId];
+      }
 
-      // let newClientToInternalSubIdMap= {...clientToInternalSubIdMap}
-      // for(let internalSubClientKey of Object.keys(clientToInternalSubIdMap)){
-      //   if(internalSubsForClient.includes(clientToInternalSubIdMap[internalSubClientKey])){
-      //     delete newClientToInternalSubIdMap[internalSubClientKey]
-      //   }
-      // }
-      // clientToInternalSubIdMap= newClientToInternalSubIdMap;
-    }, INTRNL_SOCKET_END_TIMEOUT)
+      let newClientToInternalSubIdMap= {...clientToInternalSubIdMap}
+      for(let internalSubClientKey of Object.keys(clientToInternalSubIdMap)){
+        if(internalSubsForClient.includes(clientToInternalSubIdMap[internalSubClientKey])){
+          delete newClientToInternalSubIdMap[internalSubClientKey]
+        }
+      }
+      clientToInternalSubIdMap= newClientToInternalSubIdMap;
+    // }, INTRNL_SOCKET_END_TIMEOUT)
 
   } catch (error) {
     console.log('destroyCachedDataForClient ' + error )
@@ -470,7 +428,7 @@ const genServerHandler = async(
         schemaToken: token
       }
     )
-    queryCallback.isGenerating()
+    queryCallback?.isGenerating()
 
 }
 
@@ -523,48 +481,12 @@ const gqlServerRouter = async(
           query,
           queryCallbacks,
           ws
-        )
+        );
+        queryCallbacks?.isGenerating()
       }
 
-
-
-      // //check if server is in job queue
-      // else if(worker_job_queue.includes(clusterUrl)){
-      //   //add connection to pre connect queue
-      //   addConnectionToConnectQueue(
-      //     requestMode,
-      //     clusterUrl,
-      //     connectionParams,
-      //     emitterId,
-      //     clientId,
-      //     query,
-      //     requestMode === requestTypeEnum.query ? handleQueryWait(clusterUrl, query, connectionParams) : null,
-      //     ws
-      //   );
-      // }
-        // add connection to waiting job map
-
-
-  
       // NOT GENERATING :: FREE PORT
       else if(freePort){
-
-        // for req query ping, ask for server and leave
-        // if(requestMode === requestTypeEnum.query_ping){
-        //   genServerHandler(
-        //     freePort, 
-        //     requestTypeEnum.query_ping,
-        //     token,
-        //     connectionParams,
-        //     emitterId,
-        //     clientId,
-        //     clusterUrl,
-        //     query
-        //   );
-        //   return 'generating';
-        // }
-        // sendServerGenerationMessage(ws, 'start-generate')
-  
         const queryResponse = await genServerHandler(
           freePort, 
           requestMode,
@@ -578,10 +500,6 @@ const gqlServerRouter = async(
           queryCallbacks
           
         );
-
-        // if(requestMode === requestTypeEnum.query){
-        //   return queryResponse;
-        // }
       }
   
       // NO FREE PORTS -> RECYCLE SERVER
@@ -594,26 +512,15 @@ const gqlServerRouter = async(
           emitterId,
           clientId,
           query,
-          ws
+          ws,
+          queryCallbacks
         );
-        // return await gqlServerRouter(
-        //   emitterId, 
-        //   clusterUrl, 
-        //   clientId, 
-        //   ws, 
-        //   token, 
-        //   query, 
-        //   connectionParams,
-        //   requestMode
-        // );
       }
     }
   } catch (error) {
     console.log('gqlServerRouter', error)
 
   }
-
-
 }
 
 const recycleServer = (
@@ -625,7 +532,8 @@ const recycleServer = (
   emitterId,
   clientId,
   query,
-  ws
+  ws,
+  queryCallbacks
 ) => {
   // get least used server
   const leastUsedInternalServer= serverCache.getMinUsedServer();
@@ -639,7 +547,7 @@ const recycleServer = (
       emitterId,
       clientId,
       query,
-      reqType === requestTypeEnum.query ? handleQueryWait(replacementClusterUrl, query, connectionParams) : null,
+      queryCallbacks,
       ws
     );
     //add cluster to currently gen
@@ -796,6 +704,8 @@ const addConnectionToConnectQueue = (
       connectClientQueue[clusterUrl].push(newConnectSub) :
       connectClientQueue[clusterUrl]= [newConnectSub]
   }
+  ws&&sendServerGenerationMessage(ws, 'start-generate')
+
   // console.log('Add to PreConnect', addConnectionToConnectQueue)
 }
 
@@ -808,23 +718,6 @@ const onServerGenerateStarted = (workerResponse) => {
   console.log('onServerGenerateStarted', connectClientQueue)
 }
 
-
-const handleQueryWait = async(clusterUrl, query, connectionParams) => {
-  return new Promise(async function (resolve) {
-    let hasNext=false;
-
-    const interval = setInterval(async() => {
-      if(!currentGeneratingServers?.includes(clusterUrl)&&!hasNext){
-        hasNext=true
-        clearInterval(interval);
-        const { gqlServerUrl } = serverCache.getServer(clusterUrl)
-        const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams);
-        console.log('queryResponse', queryResponse)
-        resolve(queryResponse);
-      }
-    }, 2000);
-  })
-}
 
 // SENDS SERVER GENERATION STATUS MESSAGES TO AFFECTED CLIENTS
 const sendServerGenerationMessage = (focusedWs, messageType) => {
@@ -846,6 +739,11 @@ const sendServerGenerationMessage = (focusedWs, messageType) => {
 
 // SETS UP SUBSCRIPTION FOR CLIENT
 const setupSub = (gqlServerUrl, emitterId, clientId, query, connectionParams, ws) => {
+  const subId= connectionParams?.clientSubId;
+  if(rougeSocketMap[subId]){
+    delete rougeSocketMap[subId];
+    return;
+  }
   try {
     const emitter = connectSub(
       gqlServerUrl, 
@@ -921,6 +819,12 @@ const connectWaitingSockets = (clusterUrl, serverUrl) => {
   if(connectClientQueue[clusterUrl]){
     for(let connectionData of connectClientQueue[clusterUrl]){
       const { emitterId, clientId, query, connectionParams, ws, reqType, queryCallbacks } = connectionData;
+      const subId= connectionParams?.clientSubId;
+      console.log('check', subId)
+      if(rougeSocketMap[subId]){
+        delete rougeSocketMap[subId];
+        continue;
+      }
       if(reqType === requestTypeEnum.subscribe){
         console.log('connectWaitingSockets',connectionParams.clientSubId);
         sendServerGenerationMessage(ws, 'end-generate')
