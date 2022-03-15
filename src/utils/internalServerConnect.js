@@ -13,7 +13,7 @@ const connectSub = (
     pairSubToClient
 ) => {
     try {
-      console.log('CONECTING TO', connectionParams.clientSubId);
+      // console.log('CONECTING TO', connectionParams.clientSubId);
       const em = new events.EventEmitter();
       const client = createClient({
         url: internalServerUrl,

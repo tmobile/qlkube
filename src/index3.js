@@ -29,13 +29,19 @@ let internalSubObjMap={}
 let clientToInternalSubIdMap={};
 let rougeSocketMap={};
 
+let currentGeneratingServers= [];
+let pre_connectClientQueue= {};
+let connectClientQueue= {};
+
+let worker_servers_map= {};
+let clusterUrl_serverUrl_map= {};
+let WORKER_JOB_QUEUE= [];
+
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-let currentGeneratingServers= [];
-let pre_connectClientQueue= {};
-let connectClientQueue= {};
+
 
 let WORKER_MAP= {};
 // GQL QUERIES
@@ -133,11 +139,11 @@ const checkServerConnections = () => {
 // Keep track of Subid -> internal sub obj
 const pairSubToClient = (clientId, subObj, internalSubId, clientSubId) => {
   if(rougeSocketMap[clientSubId]){
-    setTimeout(() => {
-      console.log('DISPOSE - psc', clientSubId)
+    // setTimeout(() => {
+      console.log('DISPOSE - pairSubToClient', clientSubId)
       subObj.dispose();
       delete rougeSocketMap[clientSubId]
-    }, 20000)
+    // }, 30000)
 
     return;
   }
@@ -169,8 +175,6 @@ wss.on('connection', function connection(ws) {
       // SUBSCRIPTION REQUEST :: CONNECT
       if(requestType === requestTypeEnum.subscribe){
         ws.clientId= clientId;
-        // logger.debug('Internal ws subscribe request from', connectionParams.clientId);
-        console.log('+++++++++++++', connectionParams.clientSubId)
         if(
           connectionParams?.clusterUrl&&
           clientId&&
@@ -195,9 +199,7 @@ wss.on('connection', function connection(ws) {
 
       // END INTERNAL SOCKET
       else if(requestType === requestTypeEnum.close){
-        console.log('-------------', connectionParams.clientSubId)
-
-        destroySpeifiedInternalWebsocket(connectionParams.clientSubId, connectionParams.clientId);
+        destroySpeifiedInternalWebsocket(connectionParams.clientSubId, connectionParams.clientId, connectionParams?.clusterUrl);
       }
     } catch (error) {
       logger.error('Ws handler error', error)
@@ -226,91 +228,62 @@ wss.on('connection', function connection(ws) {
   });
 
   ws.on('error', (err) => {
-    console.log('ws error ' + err )
-
+    logger.error('meta ws error: ' + err );
   })
-
   ws.onclose = function(evt){
-    console.log('ws error ' + evt )
-
+    logger.debug('meta ws closure: ' + evt );
   }
-
-  logger.debug('New meta websocket', )
+  logger.debug('New meta websocket')
 });
 
 // ENDS SPECIFIC INTERNAL SUB FOR CLIENT
-const destroySpeifiedInternalWebsocket = (clientSubId, clientId) => {
+const destroySpeifiedInternalWebsocket = (clientSubId, clientId, test) => {
   try {
-    // setTimeout(() => {
-      console.log('Closing internal ws', clientSubId)
-
-      const internalSocketId= clientToInternalSubIdMap[clientSubId];
-      const internalSubObj = internalSubObjMap[internalSocketId];
-      if(internalSubObj){
-        setTimeout(() => {
-          console.log('DSIPOSE - dest intrnl ', clientSubId)
-          internalSubObj?.dispose();
-          delete internalSubObjMap[internalSocketId];
-          delete clientToInternalSubIdMap[clientSubId];
-          if(clientInternalWsMap?.[clientId]){
-            const filteredClientInternalWs= clientInternalWsMap[clientId].filter((intsbid) => intsbid !== internalSocketId);
-            clientInternalWsMap[clientId]= filteredClientInternalWs;
-          }
-        }, 25000)
-
-      }else{
-        rougeSocketMap[clientSubId]= clientId;
+    const internalSocketId= clientToInternalSubIdMap[clientSubId];
+    const internalSubObj = internalSubObjMap[internalSocketId];
+    if(internalSubObj){
+      internalSubObj?.dispose();
+      delete internalSubObjMap[internalSocketId];
+      delete clientToInternalSubIdMap[clientSubId];
+      if(clientInternalWsMap?.[clientId]){
+        const filteredClientInternalWs= clientInternalWsMap[clientId].filter((intsbid) => intsbid !== internalSocketId);
+        clientInternalWsMap[clientId]= filteredClientInternalWs;
       }
-
-    // }, INTRNL_SOCKET_END_TIMEOUT)
-
+    }else{
+      rougeSocketMap[clientSubId]= clientId;
+    }
   } catch (error) {
-    console.log('destroySpeifiedInternalWebsocket ' + error )
-  }
-
-}
-
-const checkAndRemoveWaitingConnection = () => {
-  for(let clstrUrl of connectClientQueue){
-
+    logger.error('destroySpeifiedInternalWebsocket error: ' + error);
   }
 }
 
 // ENDS ALL CACHED ROUTING DATA FOR CLIENT
 const destroyCachedDataForClient = (wsId) => {
   try {
-    // setTimeout(() => {
-      logger.debug('Internal ws close request from', wsId)
-      let internalSubsForClient=[];
-      const checker= clientInternalWsMap?.[wsId]
-      if(wsId&&clientInternalWsMap?.[wsId]?.length > 0){
-        for(let cachedInternalSubId of clientInternalWsMap[wsId]){
-          internalSubObjMap[cachedInternalSubId].dispose();
-          delete internalSubObjMap[cachedInternalSubId];
-          internalSubsForClient.push(cachedInternalSubId);
-        };
-        delete clientInternalWsMap[wsId];
+    logger.debug('Internal ws close request from', wsId)
+    let internalSubsForClient=[];
+    if(wsId&&clientInternalWsMap?.[wsId]?.length > 0){
+      for(let cachedInternalSubId of clientInternalWsMap[wsId]){
+        internalSubObjMap[cachedInternalSubId].dispose();
+        delete internalSubObjMap[cachedInternalSubId];
+        internalSubsForClient.push(cachedInternalSubId);
+      };
+      delete clientInternalWsMap[wsId];
+    }
+    let newClientToInternalSubIdMap= {...clientToInternalSubIdMap}
+    for(let internalSubClientKey of Object.keys(clientToInternalSubIdMap)){
+      if(internalSubsForClient.includes(clientToInternalSubIdMap[internalSubClientKey])){
+        delete newClientToInternalSubIdMap[internalSubClientKey]
       }
-
-      let newClientToInternalSubIdMap= {...clientToInternalSubIdMap}
-      for(let internalSubClientKey of Object.keys(clientToInternalSubIdMap)){
-        if(internalSubsForClient.includes(clientToInternalSubIdMap[internalSubClientKey])){
-          delete newClientToInternalSubIdMap[internalSubClientKey]
-        }
-      }
-      clientToInternalSubIdMap= newClientToInternalSubIdMap;
-    // }, INTRNL_SOCKET_END_TIMEOUT)
+    }
+    clientToInternalSubIdMap= newClientToInternalSubIdMap;
 
   } catch (error) {
     console.log('destroyCachedDataForClient ' + error )
-
   }
-
 }
 
-let worker_servers_map= {};
-let clusterUrl_serverUrl_map= {};
-let WORKER_JOB_QUEUE= [];
+
 
 const workerStatusEnum = {
   idle: 'idle',
@@ -754,7 +727,6 @@ const onServerGenerated = (clusterUrl, serverUrl, threadId, port) => {
   // reset worker status
   changeWorkerStatus(threadId, workerStatusEnum.idle);
 
-
   
 }
 
@@ -781,7 +753,6 @@ const connectWaitingSockets = (clusterUrl, serverUrl) => {
     for(let connectionData of connectClientQueue[clusterUrl]){
       const { emitterId, clientId, query, connectionParams, ws, reqType, queryCallbacks } = connectionData;
       const subId= connectionParams?.clientSubId;
-      console.log('check', subId)
       if(rougeSocketMap[subId]){
         delete rougeSocketMap[subId];
         continue;
@@ -791,21 +762,13 @@ const connectWaitingSockets = (clusterUrl, serverUrl) => {
         sendServerGenerationMessage(ws, 'end-generate')
         setupSub(serverUrl, emitterId, clientId, query, connectionParams, ws);
       }
-
       else if(reqType === requestTypeEnum.query){
-        // queryServer: async(gqlServerUrl, connectionParams, query) 
         queryCallbacks.queryServer(serverUrl, connectionParams, query)
       }
-
-
     }
     delete connectClientQueue[clusterUrl]
   }
 }
-
-
-
-
 
 const messageWorker = (_worker, command, commandArgs) => {
   // console.log('Messaging worker!')
@@ -853,7 +816,7 @@ const createWorker = () => {
           const { clusterUrl, success }= processDetails;
           // onInternalServerDestroyed(clusterUrl, worker.threadId)
         }
-        // get next worker job if any
+        // get next worker job if any are in pool
         onFetchWorkerJob(worker.threadId);
       }
       else if(process_status === workerProcessStatusEnum.running){
@@ -864,7 +827,6 @@ const createWorker = () => {
           // set status on cluster object to "gen_server"
           // ## we could also message all waiting clients about this?
           onServerGenerateStarted(processDetails);
-
         }
       }
 
@@ -915,6 +877,13 @@ const serverStart = async() => {
     console.log(` Ws server Listening on port ${wsServer.address().port} 🚀🚀🚀`)
   }) 
 };
+
+process.on('unhandledRejection', (reason, p) => {
+  console.log('Unhandled Rejection at: Promise')
+  logger.debug('This is probably from a closed websocket');
+
+  // application specific logging, throwing an error, or other logic here
+});
 
 
 serverStart();

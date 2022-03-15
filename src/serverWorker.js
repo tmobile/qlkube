@@ -73,7 +73,6 @@ const generateGqlServer2 = async(port, schema) => {
           }
         }
       }, wsserver);
-      console.log('GEN NEW SERVER COMPLETE++++++111111', port);
       const serverUrl= `http://localhost:${port}/gql`;
       internalServerReference[serverUrl]= wsserver;
       return {
@@ -180,6 +179,8 @@ const commandHandler = async (message) => {
       const schema= await generateClusterSchema(kubeApiUrl, schemaToken)
       if(schema){
         const serverDetails = await generateGqlServer2(port, schema);
+        console.log('GEN NEW SERVER COMPLETE++++++111111', kubeApiUrl);
+
         const { serverUrl }= serverDetails
         clusterUrl_ServerUrl_map[kubeApiUrl]= serverUrl;
         // tell main generation is complete
