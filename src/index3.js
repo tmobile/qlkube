@@ -388,6 +388,7 @@ const gqlServerRouter = async(
 
       // if sub
       if(requestMode === requestTypeEnum.subscribe){
+        ws&&sendServerGenerationMessage(ws, 'end-generate')
         setupSub(gqlServerUrl, emitterId, clientId, query, connectionParams, ws)
       }
 
