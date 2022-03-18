@@ -207,7 +207,7 @@ const checkServerConnections = () => {
     // if(socketCount > 0){
     //   serverCache.refreshServerUsage(clusterUrl)
     // }
-    // console.log('SERVER---', serverUrl, socketCount);
+    console.log('SERVER---', serverUrl, socketCount);
   }
 }
 if (isMainThread) {} 
@@ -229,7 +229,7 @@ else {
 
       console.log('WORKER_MEM_USAGE', process.memoryUsage().heapTotal/1000000)
       checkServerConnections()
-    }, 25000) 
+    }, 5000) 
 
   }
 

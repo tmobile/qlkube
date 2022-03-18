@@ -11,7 +11,7 @@ function graphQLErrorWithExtensions(message, extensions) {
 function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
     // Return resolve function :
     return (source, args, context, info) => {
-        let apiUrl = context.clusterURL + k8sApiUrlPath;
+        let apiUrl = context.clusterUrl + k8sApiUrlPath;
         apiUrl = apiUrl.replace('{namespace}', args['namespace']);
         apiUrl = apiUrl.replace('{name}', args['name']);
         logger.debug("getK8SCustomResolver : processing url " + apiUrl);

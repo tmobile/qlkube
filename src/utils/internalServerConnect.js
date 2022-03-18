@@ -12,8 +12,8 @@ const connectSub = (
     connectionParams,
     pairSubToClient
 ) => {
+
     try {
-      // console.log('CONECTING TO', connectionParams.clientSubId);
       const em = new events.EventEmitter();
       const client = createClient({
         url: internalServerUrl,
@@ -60,6 +60,8 @@ const connectSub = (
 }
 
 const connectQuery = async(internalServerUrl, query, connectionParams) => {
+  console.log('recieved', connectionParams?.queryVariables)
+
     const client = createClient({
       url: internalServerUrl,
       webSocketImpl: ws,
@@ -78,7 +80,9 @@ const connectQuery = async(internalServerUrl, query, connectionParams) => {
         let result
         client.subscribe(
           {
-            query: query
+            query: query,
+            variables: connectionParams?.queryVariables
+
           },
           {
             next: (data) => {

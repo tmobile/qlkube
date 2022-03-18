@@ -49,9 +49,13 @@ let WORKER_MAP= {};
 // 1 return promise that has set interval checking completed servers
 // 2 create promis and pass it all the way into connect client queue -> call resolver when server completes
 app.get('/gql', async(req, res) => {
+  console.log('recieved request');
+  console.log(req?.headers?.connectionparams);
+
     if(req?.headers?.connectionparams){
       const queryParams= JSON.parse(req?.headers?.connectionparams);
       const { query, authorization, clusterUrl }= queryParams;
+      console.log('recieved request', query, clusterUrl);
 
       const queryCallbacks = {
         isGenerating: () => {
@@ -394,6 +398,7 @@ const gqlServerRouter = async(
 
       // if query
       if(requestMode === requestTypeEnum.query){
+        console.log('Query!')
         queryCallbacks.queryServer(gqlServerUrl, connectionParams, query);
         return;
       }
@@ -439,6 +444,8 @@ const gqlServerRouter = async(
   
       // NO FREE PORTS -> RECYCLE SERVER
       else{
+        queryCallbacks?.isGenerating()
+
         recycleServer(
           clusterUrl, 
           token,

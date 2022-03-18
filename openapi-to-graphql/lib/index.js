@@ -20,7 +20,7 @@ const translationLog = debug_1.default('translation');
 /**
  * Creates a GraphQL interface from the given OpenAPI Specification (2 or 3).
  */
-function createGraphQLSchema(spec, options, finalOas) {
+function createGraphQLSchema(spec, options) {
     return new Promise((resolve, reject) => {
         if (typeof options === 'undefined') {
             options = {};
@@ -78,37 +78,31 @@ function createGraphQLSchema(spec, options, finalOas) {
             numMutationsCreated: 0,
             numSubscriptionsCreated: 0
         };
-        if(!finalOas){
-            if (Array.isArray(spec)) {
-                // Convert all non-OAS 3 into OAS 3
-                Promise.all(spec.map(ele => {
-                    return Oas3Tools.getValidOAS3(ele);
-                })).then(oass => {
-                    resolve(translateOpenAPIToGraphQL(oass, options));
-                });
-            }
-            else {
-                /**
-                 * Check if the spec is a valid OAS 3
-                 * If the spec is OAS 2.0, attempt to translate it into 3, then try to
-                 * translate the spec into a GraphQL schema
-                 */
-                
-                Oas3Tools.getValidOAS3(spec).then(oas => {
-                    resolve(translateOpenAPIToGraphQL([oas], options));
-                });
-            }
-        }else{
-            resolve(translateOpenAPIToGraphQL(null, options, finalOas))
+        if (Array.isArray(spec)) {
+            // Convert all non-OAS 3 into OAS 3
+            Promise.all(spec.map(ele => {
+                return Oas3Tools.getValidOAS3(ele);
+            })).then(oass => {
+                resolve(translateOpenAPIToGraphQL(oass, options));
+            });
         }
-
+        else {
+            /**
+             * Check if the spec is a valid OAS 3
+             * If the spec is OAS 2.0, attempt to translate it into 3, then try to
+             * translate the spec into a GraphQL schema
+             */
+            Oas3Tools.getValidOAS3(spec).then(oas => {
+                resolve(translateOpenAPIToGraphQL([oas], options));
+            });
+        }
     });
 }
 exports.createGraphQLSchema = createGraphQLSchema;
 /**
  * Creates a GraphQL interface from the given OpenAPI Specification 3
  */
-async function translateOpenAPIToGraphQL(oass, { strict, report, 
+function translateOpenAPIToGraphQL(oass, { strict, report, 
 // Schema options
 operationIdFieldNames, fillEmptyResponses, addLimitArgument, idFormats, selectQueryOrMutationField, genericPayloadArgName, simpleNames, singularNames, createSubscriptionsFromCallbacks, 
 // Resolver options
@@ -116,9 +110,7 @@ headers, qs, requestOptions, connectOptions, baseUrl, customResolvers, customSub
 // Authentication options
 viewer, tokenJSONpath, sendOAuthTokenInQuery, 
 // Logging options
-provideErrorExtensions, equivalentToMessages }, finalOas) {
-    console.time('translateOpenAPIToGraphQL')
-
+provideErrorExtensions, equivalentToMessages }) {
     const options = {
         strict,
         report,
@@ -153,9 +145,7 @@ provideErrorExtensions, equivalentToMessages }, finalOas) {
      * Extract information from the OASs and put it inside a data structure that
      * is easier for OpenAPI-to-GraphQL to use
      */
-    const data = finalOas ? finalOas : await preprocessor_1.preprocessOas(oass, options);
-    // console.log('data', Object.keys(data))
-
+    const data = preprocessor_1.preprocessOas(oass, options);
     preliminaryChecks(options, data);
     // Query, Mutation, and Subscription fields
     let queryFields = {};
@@ -408,15 +398,12 @@ provideErrorExtensions, equivalentToMessages }, finalOas) {
         }
     });
     const schema = new graphql_2.GraphQLSchema(schemaConfig);
-    // var allEnd = performance.now();
-    // console.timeEnd('translateOpenAPIToGraphQL')
     return { schema, report: options.report };
 }
 /**
  * Creates the field object for the given operation.
  */
 function getFieldForOperation(operation, baseUrl, data, requestOptions, connectOptions) {
-    // console.log('operation', baseUrl)
     // Create GraphQL Type for response:
     const type = schema_builder_1.getGraphQLType({
         def: operation.responseDefinition,
@@ -557,6 +544,5 @@ var oas_3_tools_1 = require("./oas_3_tools");
 Object.defineProperty(exports, "sanitize", { enumerable: true, get: function () { return oas_3_tools_1.sanitize; } });
 Object.defineProperty(exports, "CaseStyle", { enumerable: true, get: function () { return oas_3_tools_1.CaseStyle; } });
 var graphql_3 = require("./types/graphql");
-const { final } = require("pino");
 Object.defineProperty(exports, "GraphQLOperationType", { enumerable: true, get: function () { return graphql_3.GraphQLOperationType; } });
 //# sourceMappingURL=index.js.map
