@@ -50,10 +50,10 @@ function mapK8ApiPaths(oas, pathNames, graphQlSchemaMap) {
     .filter((obj) => obj !== false));
 }
 
-async function translateOpenAPIToGraphQLREV(oass, options) {
+const translateOpenAPIToGraphQLREV = (data) => {
   console.log('call preprocess util!')
-  const data = await preprocessor_1.preprocessOas(oass, options);
   let schemaTypeMap = {};
+
   Object.entries(data.operations).forEach(([operationId, operation]) => {
     // console.log(operation.responseDefinition?.targetGraphQLType)
     const field = schema_builder_1.getGraphQLType({
@@ -72,3 +72,4 @@ async function translateOpenAPIToGraphQLREV(oass, options) {
 
 exports.mapGraphQlDefaultPaths = mapGraphQlDefaultPaths;
 exports.mapK8ApiPaths = mapK8ApiPaths;
+exports.translateOpenAPIToGraphQLREV = translateOpenAPIToGraphQLREV;

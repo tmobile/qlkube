@@ -92,32 +92,14 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
     const authTokenSplit = schemaToken.split(' ');
     const token = authTokenSplit[authTokenSplit.length - 1];
     const oasRaw = await getOpenApiSpec(kubeApiUrl, token);
-
-    // console.log('Generate Schema 1')
     const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
-    // console.log('Generate Schema 2')
     const subs = await getWatchables(oasWatchable);
-    // console.log('Generate Schema 3')
     const oas = deleteWatchParameters(oasWatchable);
-    // console.log('Generate Schema 4')
-    const { graphQlSchemaMap } = await utilities.mapGraphQlDefaultPaths(oas);// takes a while
-    console.log('Generate Schema 5');
-    if(graphQlSchemaMap.error){
-      // proabably an invalid zuth token
-      //## PING MAIN THREAD
-      // return graphQlSchemaMap;
-    }
-    const k8PathKeys = Object.keys(oas.paths);
-    const mappedK8Paths = utilities.mapK8ApiPaths(
-      oas,
-      k8PathKeys,
-      graphQlSchemaMap
-    );
-    console.log('Generate Schema 6')
+
+    console.log('Create Schema')
     const schema = await createSchema(
       oas,
       kubeApiUrl,
-      mappedK8Paths,
       subs.mappedWatchPath,
       subs.mappedNamespacedPaths,
     ); // takes the longest

@@ -5,6 +5,7 @@ const { createGraphQLSchema } = require('../openapi-to-graphql');
 const { logger } = require('./log');
 const { getK8SCustomResolver } = require('./resolver/customresolver');
 const watch = require('./watch');
+const utilities = require('./utilities');
 
 const customSubArgs = {
   'PodLogs': {
@@ -162,7 +163,7 @@ exports.deleteDeprecatedWatchPaths = (oas) => {
 };
 
 async function oasToGraphQlSchema(oas, kubeApiUrl, finalOas) {
-  const { schema } = await createGraphQLSchema(oas, {
+  const { schema, data } = await createGraphQLSchema(oas, {
     baseUrl: kubeApiUrl,
     viewer: false,
     customResolvers: {
@@ -193,7 +194,7 @@ async function oasToGraphQlSchema(oas, kubeApiUrl, finalOas) {
       'Accept': 'application/json, */*'
     }),
   }, finalOas);
-  return schema;
+  return {schema, data};
 }
 
 function createSubscriptionSchema(
@@ -338,10 +339,10 @@ function createSubscriptionSchema(
   return schema;
 }
 
+
 exports.createSchema = async (
   oas,
   kubeApiUrl,
-  subscriptions,
   watchableNonNamespacePaths,
   mappedNamespacedPaths,
   finalOas
@@ -352,7 +353,14 @@ exports.createSchema = async (
   //.paths details about each endpoint
   //.definitions no clue but looks important
 
-  const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl, finalOas);
+  const {schema:baseSchema, data} = await oasToGraphQlSchema(oas, kubeApiUrl, finalOas);
+  const { graphQlSchemaMap } = utilities.translateOpenAPIToGraphQLREV(data);// takes a while
+  const k8PathKeys = Object.keys(oas.paths);
+  const subscriptions = utilities.mapK8ApiPaths(
+    oas,
+    k8PathKeys,
+    graphQlSchemaMap
+  );
   // console.log('baseSchema', baseSchema)
   const schemas = [baseSchema];
   const pathMap = {};

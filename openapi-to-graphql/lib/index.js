@@ -398,7 +398,7 @@ provideErrorExtensions, equivalentToMessages }) {
         }
     });
     const schema = new graphql_2.GraphQLSchema(schemaConfig);
-    return { schema, report: options.report };
+    return { schema, report: options.report, data };
 }
 /**
  * Creates the field object for the given operation.

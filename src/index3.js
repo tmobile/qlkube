@@ -174,7 +174,7 @@ wss.on('connection', function connection(ws) {
     try {
       const connectionMessage= JSON.parse(data);
       const { requestType, clientId, query, connectionParams }= connectionMessage;
-      // console.log('Recieve Message For', clientId)
+      // console.log('Recieve Message For', clientId, requestType)
 
       // SUBSCRIPTION REQUEST :: CONNECT
       if(requestType === requestTypeEnum.subscribe){
