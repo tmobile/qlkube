@@ -10,7 +10,8 @@ const connectSub = (
     clientId, 
     query, 
     connectionParams,
-    pairSubToClient
+    pairSubToClient,
+    serverUsageCallback
 ) => {
 
     try {
@@ -32,6 +33,7 @@ const connectSub = (
       (async () => {
             const onNext = (val) => {
                 // console.log('recieved', val)
+                serverUsageCallback(connectionParams?.clusterUrl)
                 em.emit(emitterId, val);
               };
               await client.subscribe(
@@ -59,7 +61,12 @@ const connectSub = (
     }
 }
 
-const connectQuery = async(internalServerUrl, query, connectionParams) => {
+const connectQuery = async(
+  internalServerUrl, 
+  query, 
+  connectionParams,
+  serverUsageCallback
+) => {
   console.log('recieved', connectionParams?.queryVariables)
 
     const client = createClient({
@@ -86,7 +93,7 @@ const connectQuery = async(internalServerUrl, query, connectionParams) => {
           },
           {
             next: (data) => {
-              result = data
+              result = data;
               console.log('QUERY DATA next', data)
             },
             error: (err) => console.log('QUERY ERROR', err),
@@ -95,6 +102,7 @@ const connectQuery = async(internalServerUrl, query, connectionParams) => {
         )
       })
     })().catch(e => console.log('error...', e))
+    serverUsageCallback(connectionParams?.clusterUrl);
     return wow;
   }
 

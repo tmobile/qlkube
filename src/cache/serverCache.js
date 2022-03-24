@@ -17,7 +17,7 @@ function ServerObject(
   this.threadId= threadId
 }
 
-var serverCache = module.exports ={
+const serverCache = module.exports ={
     portQueue:[...Array.from(Array(gqlPortRange.max - gqlPortRange.min + 1).keys()).map(x => x + gqlPortRange.min)],
     usedPorts:{},
     pendingPorts:{}, // port -> clusterurl :: servers are generating using these ports
@@ -32,6 +32,9 @@ var serverCache = module.exports ={
       )
       this.servers[clusterUrl]= newServer;
       this.movePortUsed(port)
+    },
+    getServer: function(clusterUrl) {
+      return this.servers?.[clusterUrl]
     },
     movePortQueueToPending: function(portNo, clusterUrl) {
       if(this.portQueue?.length > 0){
@@ -67,20 +70,31 @@ var serverCache = module.exports ={
     getMinUsedServer: function() {
       let minUsedServer;
       for(let clusterUrl of Object.keys(this.servers)){
-        const { lastUsed }= this.servers[clusterUrl];
-        if(!minUsedServer){
+        const { lastUsed, port }= this.servers[clusterUrl];
+        if(this.pendingPorts[port]) continue;
+        else if(!minUsedServer){
           minUsedServer= clusterUrl
         }else if(new Date(this.servers[minUsedServer].lastUsed) > new Date(lastUsed)){
           minUsedServer= clusterUrl;
         }
       }
-      return this.servers[minUsedServer];
+      const leastUsedInternalServer= this.servers[minUsedServer];
+      const diffMs = (new Date(leastUsedInternalServer?.lastUsed) - new Date())*-1;
+      var diffMins = Math.round(((diffMs % 86400000) % 3600000) / 60000); // minutes
+
+      return { serverData: this.servers[minUsedServer], timeDiff_minutes: diffMins };
+    },
+    refreshServerUsage: function(serverkey) {
+        const refreshedServerData= {
+            ...this.servers?.[serverkey],
+            lastUsed: new Date().toUTCString()
+        }
+        this.servers[serverkey]= refreshedServerData;
+        console.log('update usage', serverkey, refreshedServerData.lastUsed)
     },
 
 
-    getServer: function(clusterUrl) {
-      return this.servers?.[clusterUrl]
-    },
+
     onServerDestroy: async function(clusterUrl) {
       const serverReference= this.servers[clusterUrl];
       if(serverReference){
@@ -100,15 +114,5 @@ var serverCache = module.exports ={
       serverObject.close(() => {
         return true
       })
-    },
-    refreshServerUsage: function(serverkey) {
-        const refServerObj= this.servers?.[serverkey]?.serverObj;
-        const refreshedServerData= {
-            ...this.servers?.[serverkey],
-            lastUsed: new Date().toUTCString(),
-            serverObj: refServerObj
-        }
-        this.servers[serverkey]= refreshedServerData;
-        console.log('update usage', serverkey, refreshedServerData.lastUsed)
     }
   }

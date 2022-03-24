@@ -11,18 +11,25 @@ const wss = new WebSocketServer({ server: wsServer });
 const path = require('path')
 
 //------
+var request = require('request');
 
 const bodyParser = require('body-parser');
 var process = require('process')
 const serverCache = require('./cache/serverCache');
 
 const { connectSub, connectQuery } = require('./utils/internalServerConnect');
-const { workerProcesseesEnum, workerCommandEnum } = require('./enum/workerEnum')
+const { workerProcesseesEnum, workerCommandEnum, workerStatusEnum, workerProcessStatusEnum } = require('./enum/workerEnum');
+const { requestTypeEnum } = require('./enum/requestEnum');
+const { WorkerJob, WorkerObj, ConnectSubArg, ConnectQueryArg } = require('./models/argumentTypes')
 //------
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 const inCluster = process.env.IN_CLUSTER !== 'false';
 logger.info({ inCluster }, 'cluster mode configured');
+
+const rawConfig= nodeFs.readFileSync(path.join(__dirname, './config.json'));
+const config= JSON.parse(rawConfig);
+
 
 let clientInternalWsMap={};
 let internalSubObjMap={}
@@ -41,9 +48,21 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-
+let preLoadCount= 0;
+let preLoadCurrent= 0;
+let preLoadFailed= 0;
+let preLoadSuccess= 0;
+let isPreloaded= false;
 
 let WORKER_MAP= {};
+
+process.on('unhandledRejection', (reason, p) => {
+  console.log('Unhandled Rejection at: Promise')
+  logger.debug('This is probably from a closed websocket');
+
+  // application specific logging, throwing an error, or other logic here
+});
+
 // GQL QUERIES
 // how to handle...
 // 1 return promise that has set interval checking completed servers
@@ -64,7 +83,7 @@ app.get('/gql', async(req, res) => {
           }))
         },
         queryServer: async(gqlServerUrl, connectionParams, query) => {
-          const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams);
+          const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams, updateServerUsage);
           console.log('queryResponse', queryResponse)
           res.write(JSON.stringify({
             data:  queryResponse,
@@ -89,15 +108,6 @@ app.get('/gql', async(req, res) => {
 
 });
 
-
-
-const requestTypeEnum={
-  subscribe: 'subscribe',
-  close: 'close',
-  query: 'query',
-  query_ping: 'query_ping'
-};
-
 // setInterval(() => {
 //   // console.log(' ')
 //   // console.log(' ')
@@ -117,6 +127,13 @@ const requestTypeEnum={
 //   // checkServerConnections()
 // }, 20000) 
 
+// callback to update server last used
+const updateServerUsage = (clusterUrl) => {
+  console.log('SERVER USAGE CALLBACK!')
+  if(serverCache.getServer(clusterUrl)){
+    serverCache.refreshServerUsage(clusterUrl);
+  }
+}
 
 
 // ## recycle logic 
@@ -143,12 +160,9 @@ const checkServerConnections = () => {
 // Keep track of Subid -> internal sub obj
 const pairSubToClient = (clientId, subObj, internalSubId, clientSubId) => {
   if(rougeSocketMap[clientSubId]){
-    // setTimeout(() => {
-      console.log('DISPOSE - pairSubToClient', clientSubId)
-      subObj.dispose();
-      delete rougeSocketMap[clientSubId]
-    // }, 30000)
-
+    console.log('DISPOSE - pairSubToClient', clientSubId)
+    subObj.dispose();
+    delete rougeSocketMap[clientSubId]
     return;
   }
 
@@ -156,7 +170,6 @@ const pairSubToClient = (clientId, subObj, internalSubId, clientSubId) => {
   clientToInternalSubIdMap[clientSubId]= internalSubId;
   if(!clientInternalWsMap[clientId]){
     clientInternalWsMap[clientId]=[internalSubId]
-    
   }else{
     newClientData= clientInternalWsMap;
     newClientSubList= newClientData?.[clientId] || [];
@@ -174,7 +187,6 @@ wss.on('connection', function connection(ws) {
     try {
       const connectionMessage= JSON.parse(data);
       const { requestType, clientId, query, connectionParams }= connectionMessage;
-      // console.log('Recieve Message For', clientId, requestType)
 
       // SUBSCRIPTION REQUEST :: CONNECT
       if(requestType === requestTypeEnum.subscribe){
@@ -219,7 +231,7 @@ wss.on('connection', function connection(ws) {
   ws.on('close', () => {
     try {
       // End all internal websockets for disconnected client
-      logger.debug('Meta websocket closed for', ws.clientId);
+      // logger.debug('Meta websocket closed for', ws.clientId);
       const currentClientId= ws.clientId;
       destroyCachedDataForClient(currentClientId);
     } catch (error) {
@@ -287,33 +299,18 @@ const destroyCachedDataForClient = (wsId) => {
   }
 }
 
-
-
-const workerStatusEnum = {
-  idle: 'idle',
-  busy: 'busy'
-}
-const workerProcessStatusEnum = {
-  complete: 'complete',
-  running: 'running',
-  failed: 'failed'
-}
-
-
 const checkWorkersForServer = (serverId) => {
-  // console.log('worker_servers_map', worker_servers_map)
   for(let [workerId, servers] of Object.entries(worker_servers_map)){
-    // console.log(workerId, servers)
 
     if(servers&&servers?.includes(serverId)){
       return {
         gqlServerUrl: clusterUrl_serverUrl_map[serverId],
-        workerHandler: workerId
+        workerHandler: workerId,
+        isRunning: clusterUrl_serverUrl_map[serverId] ? true: false
       }
     }
   }
   return false;
-  // return gql server uri for specific 
 }
 
 const getIdleWorker = () => {
@@ -323,51 +320,6 @@ const getIdleWorker = () => {
     }
   }
   return false;
-}
-
-
-const genServerHandler = async(
-  freePort, 
-  reqType,
-  token,
-  connectionParams,
-  emitterId,
-  clientId,
-  clusterUrl,
-  query,
-  ws,
-  queryCallback
-) => {
-  console.log('genServerHandler !')
-
-    addConnectionToConnectQueue(
-      reqType,
-      clusterUrl,
-      connectionParams,
-      emitterId,
-      clientId,
-      query,
-      queryCallback,
-      ws
-    );
-
-    //add cluster to currently gen
-    currentGeneratingServers.push(clusterUrl);
-    //move port to pending
-    serverCache.movePortQueueToPending(freePort, clusterUrl);
-
-    // create job for worker
-    // it will handle finding an idle thread
-    onAddWorkerJob(
-      workerCommandEnum.generate,
-      {
-        port: freePort,
-        kubeApiUrl: clusterUrl,
-        schemaToken: token
-      }
-    )
-    queryCallback?.isGenerating()
-
 }
 
 // ROUTES ALL TRAFFIC, DETERMINES IF NEW GQL SERVER NEEDS GENERATION
@@ -387,7 +339,7 @@ const gqlServerRouter = async(
 
     const internalServerUrl= checkWorkersForServer(clusterUrl);
     // SERVER EXISTS
-    if(internalServerUrl){
+    if(internalServerUrl?.isRunning){
       const { gqlServerUrl }= internalServerUrl;
 
       // if sub
@@ -403,12 +355,13 @@ const gqlServerRouter = async(
         return;
       }
     }
-  
+
     // SERVER DOSENT EXIST
     else{
       // sendServerGenerationMessage(ws, 'start-generate')
       const freePort= serverCache.getUnusedPort();
-      
+
+
       //BEING GENERATED
       if(connectClientQueue[clusterUrl]){
         //add to connect queue
@@ -437,8 +390,8 @@ const gqlServerRouter = async(
           clusterUrl,
           query,
           ws,
-          queryCallbacks
-          
+          queryCallbacks,
+          internalServerUrl&&!internalServerUrl?.isRunning&&'cache'
         );
       }
   
@@ -455,7 +408,8 @@ const gqlServerRouter = async(
           clientId,
           query,
           ws,
-          queryCallbacks
+          queryCallbacks,
+          internalServerUrl&&!internalServerUrl?.isRunning&&'cache'
         );
       }
     }
@@ -475,10 +429,11 @@ const recycleServer = (
   clientId,
   query,
   ws,
-  queryCallbacks
+  queryCallbacks,
+  genType
 ) => {
   // get least used server
-  const leastUsedInternalServer= serverCache.getMinUsedServer();
+  const { server:leastUsedInternalServer, timeDiff_minutes }= serverCache.getMinUsedServer();
   if(leastUsedInternalServer){
     const { threadId, clusterUrl, port }= leastUsedInternalServer;
 
@@ -504,20 +459,74 @@ const recycleServer = (
       },
       threadId
     );
+
+    const genFromCache= genType==='cache' ? true : false;
+
+    genFromCache&&genServerFromCacheComm(freePort, clusterUrl);
+    !genFromCache&&genServerComm(freePort, clusterUrl, token);
+  }
+}
+
+const genServerFromCacheComm = (freePort, clusterUrl) => {
+  onAddWorkerJob(
+    workerCommandEnum.generateCached,
+    {
+      port: freePort,
+      kubeApiUrl: clusterUrl
+    }
+  )
+}
+
+const genServerComm = (freePort, clusterUrl, token) => {
+  onAddWorkerJob(
+    workerCommandEnum.generate,
+    {
+      port: freePort,
+      kubeApiUrl: clusterUrl,
+      schemaToken: token
+    }
+  )
+}
+
+const genServerHandler = async(
+  freePort, 
+  reqType,
+  token,
+  connectionParams,
+  emitterId,
+  clientId,
+  clusterUrl,
+  query,
+  ws,
+  queryCallback,
+  genType
+) => {
+
+    addConnectionToConnectQueue(
+      reqType,
+      clusterUrl,
+      connectionParams,
+      emitterId,
+      clientId,
+      query,
+      queryCallback,
+      ws
+    );
+
+    //add cluster to currently gen
+    currentGeneratingServers.push(clusterUrl);
+    //move port to pending
+    serverCache.movePortQueueToPending(freePort, clusterUrl);
+
     // create job for worker
     // it will handle finding an idle thread
-    onAddWorkerJob(
-      workerCommandEnum.generate,
-      {
-        port: port,
-        kubeApiUrl: replacementClusterUrl,
-        schemaToken: token
-      }
-    )
+    const genFromCache= genType==='cache' ? true : false;
 
-  }
+    genFromCache&&genServerFromCacheComm(freePort, clusterUrl);
+    !genFromCache&&genServerComm(freePort, clusterUrl, token);
 
-  
+    queryCallback?.isGenerating()
+
 }
 
 // create job
@@ -562,52 +571,6 @@ const onFetchWorkerJob = (threadId) => {
     }
 }
 
-function WorkerJob(
-  command,
-  commandArgs,
-  allocatedThreadId
-){
-  this.command= command, 
-  this.commandArgs= commandArgs
-  this.allocatedThreadId= allocatedThreadId
-}
-
-function WorkerObj(
-  status,
-  worker
-){
-  this.status= status, 
-  this.worker= worker
-}
-
-function ConnectSubArg(
-  clusterUrl,
-  emitterId,
-  clientId,
-  query,
-  connectionParams,
-  ws,
-  reqType
-){
-  this.clusterUrl= clusterUrl, 
-  this.emitterId= emitterId
-  this.clientId= clientId
-  this.query= query
-  this.connectionParams= connectionParams
-  this.ws= ws
-  this.reqType= reqType
-}
-function ConnectQueryArg(
-  queryCallbacks,
-  connectionParams,
-  query,
-  reqType
-){
-  this.queryCallbacks= queryCallbacks, 
-  this.connectionParams= connectionParams, 
-  this.query= query, 
-  this.reqType= reqType
-}
 
 // WAIT FOR WORKER TO CONFIRM SERVER BUILD
 const addConnectionToConnectQueue = (
@@ -647,8 +610,6 @@ const addConnectionToConnectQueue = (
       connectClientQueue[clusterUrl]= [newConnectSub]
   }
   ws&&sendServerGenerationMessage(ws, 'start-generate')
-
-  // console.log('Add to PreConnect', addConnectionToConnectQueue)
 }
 
 const onServerGenerateStarted = (workerResponse) => {
@@ -663,23 +624,19 @@ const onServerGenerateStarted = (workerResponse) => {
 
 // SENDS SERVER GENERATION STATUS MESSAGES TO AFFECTED CLIENTS
 const sendServerGenerationMessage = (focusedWs, messageType) => {
-  // console.log('sendServerGenerationMessage', messageType)
+
   if(focusedWs?.readyState !== 1)
     return;
 
-  messageType === 'start-generate'&&focusedWs?.send(JSON.stringify(
-    {
-      status: 'generating'
-    }
-  ))
-  messageType === 'end-generate'&&focusedWs?.send(JSON.stringify(
-    {
-      status: 'exists'
-    }
-  ))
+  messageType === 'start-generate'&&focusedWs?.send(
+    JSON.stringify({ status: 'generating' })
+  )
+  messageType === 'end-generate'&&focusedWs?.send(
+    JSON.stringify({ status: 'exists' })
+  )
 }
 
-// SETS UP SUBSCRIPTION FOR CLIENT
+// SETS UP SUBSCRIPTION / EMITTER FOR CLIENT
 const setupSub = (gqlServerUrl, emitterId, clientId, query, connectionParams, ws) => {
   const subId= connectionParams?.clientSubId;
   if(rougeSocketMap[subId]){
@@ -693,7 +650,8 @@ const setupSub = (gqlServerUrl, emitterId, clientId, query, connectionParams, ws
       clientId, 
       query, 
       connectionParams,
-      pairSubToClient
+      pairSubToClient,
+      updateServerUsage
     );
     emitter.on(emitterId, data => {
       if(ws?.readyState !== 1)
@@ -735,7 +693,29 @@ const onServerGenerated = (clusterUrl, serverUrl, threadId, port) => {
   // reset worker status
   changeWorkerStatus(threadId, workerStatusEnum.idle);
 
+}
+
+const onPostPreLoad = (threadId, clusterUrl, commStatus) => {
+
+  preLoadCurrent++;
+  commStatus&&preLoadSuccess++;
+  !commStatus&&preLoadFailed++;
+
+  changeWorkerStatus(threadId, workerStatusEnum.idle);
+  commStatus&&pairNewServerToWorker(threadId, clusterUrl, null);
+  const preLoadStatus_actual= Math.ceil((preLoadCurrent / preLoadCount)*100) ;
+  const preLoadStatus= Math.ceil(((preLoadCurrent / preLoadCount)*100)/ 5) ;
   
+  const dots = ".".repeat(preLoadStatus)
+  const left = 20 - preLoadStatus
+  const empty = " ".repeat(left)
+
+  console.log('\x1b[36m%s\x1b[0m', `\r[${dots}${empty}] ${preLoadStatus_actual}%`)
+  if(preLoadCurrent === preLoadCount){
+    console.log("\x1b[32m%s\x1b[0m", `Pre loading complete! :: success ${preLoadSuccess} :: failed ${preLoadFailed}`);
+    serverStart();
+    isPreloaded=true;
+  }
 }
 
 const removeClusterUrlFromServerMap = (threadId, clusterUrl) => {
@@ -766,7 +746,6 @@ const connectWaitingSockets = (clusterUrl, serverUrl) => {
         continue;
       }
       if(reqType === requestTypeEnum.subscribe){
-        console.log('connectWaitingSockets',connectionParams.clientSubId);
         sendServerGenerationMessage(ws, 'end-generate')
         setupSub(serverUrl, emitterId, clientId, query, connectionParams, ws);
       }
@@ -779,7 +758,6 @@ const connectWaitingSockets = (clusterUrl, serverUrl) => {
 }
 
 const messageWorker = (_worker, command, commandArgs) => {
-  // console.log('Messaging worker!')
   _worker.postMessage({command, commandArgs})
 }
 
@@ -788,18 +766,80 @@ const changeWorkerStatus = (threadId, status) => {
 }
 
 const pairNewServerToWorker = (threadId, clusterUrl, serverUrl) => {
-  if(worker_servers_map[threadId]?.includes(clusterUrl))
-    return;
 
-  worker_servers_map[threadId]= [...worker_servers_map[threadId]||[], clusterUrl];
-  clusterUrl_serverUrl_map[clusterUrl]= serverUrl;
+  !worker_servers_map[threadId]?.includes(clusterUrl)&&
+    (worker_servers_map[threadId]= [...worker_servers_map[threadId]||[], clusterUrl]);
+
+  // if null serverUrl
+  // we interpret that as a "non live" server
+  // there is a specific job to handle this
+  serverUrl&&(clusterUrl_serverUrl_map[clusterUrl]= serverUrl);
+}
+
+const onWorkerStarted = async() => {
+
+  // ## Better solution in future
+  const getBasicToken = async() => {
+    try {
+      if(process.env.PRINCIPAL_USER&&process.env.PRINCIPAL_PASS){
+        const basicAuthFormat= `${process.env.PRINCIPAL_USER}:${process.env.PRINCIPAL_PASS}`;
+        const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
+        var options = {
+          method: 'POST',
+          url: process.env.AUTH_URL,
+          headers: {
+            'Authorization': `Basic ${basicAuthBase64}`
+          }
+        };
+        return new Promise((resolve, reject) => {
+          request(options, function (error, response) {
+            if (error) throw new Error(error);
+            const data= JSON.parse(response.body)
+            if (!data.jwt) throw new Error('request error');
+            resolve(data?.jwt);
+          });
+        })
+      }
+    } catch (error) {
+      return {
+        error: {
+          errorPayload: error
+        }
+      }
+    }
+  }
+
+
+  console.log('Worker has started');
+
+  //check and preload
+  if(config?.preLoad){
+    const token= await getBasicToken();
+    console.log(token)
+    if(!token.error){
+      const preLoadList= config.preLoad;
+      preLoadCount= preLoadList?.length;
+      for(let clusterUrl of config.preLoad){
+        onAddWorkerJob(
+          workerCommandEnum.preLoad,
+          {
+            kubeApiUrl: clusterUrl,
+            schemaToken: `Bearer ${token}`
+          }
+        )
+      }
+    }
+  }else{
+    serverStart();
+    isPreloaded=true;
+  }
 }
 
 const createWorker = () => {
   try {
     const worker = new Worker('./src/serverWorker.js', {
       workerData: {
-        command: 'init',
+        command: workerProcesseesEnum.init,
       }
     });
     worker.on('message', async(msg) => {
@@ -808,7 +848,7 @@ const createWorker = () => {
         if(process === workerProcesseesEnum.gen_server){
           const clusterUrl= processDetails;
           // handle waiting connections
-          // process cache
+          // and update cache
           onServerGenerated(
             processDetails.clusterUrl, 
             processDetails.serverUrl,
@@ -821,8 +861,12 @@ const createWorker = () => {
           onInternalServerDestroyed(clusterUrl, worker.threadId)
         }
         else if(process === workerProcesseesEnum.init){
-          const { clusterUrl, success }= processDetails;
-          // onInternalServerDestroyed(clusterUrl, worker.threadId)
+          const { success }= processDetails;
+            // check preload
+            onWorkerStarted()
+        }
+        else if(process === workerProcesseesEnum.preLoad){
+          onPostPreLoad(worker.threadId, processDetails.clusterUrl, true);
         }
         // get next worker job if any are in pool
         onFetchWorkerJob(worker.threadId);
@@ -837,14 +881,19 @@ const createWorker = () => {
           onServerGenerateStarted(processDetails);
         }
       }
-
+      else if(process_status === workerProcessStatusEnum.failed){
+        if(process === workerProcesseesEnum.preLoad){
+          onPostPreLoad(worker.threadId, processDetails.clusterUrl, false);
+        }
+        onFetchWorkerJob(worker.threadId);
+      }
     });
-    worker.on('error', (code) => {
-      throw `Worker stopped with exit code ${code}`
+    worker.on('error', (msg) => {
+      throw `Worker stopped with error :: ${msg}`
     });
     worker.on('exit', (code) => {
       if (code !== 0)
-        throw `Worker stopped with exit code ${code}`;
+        throw `Worker stopped with exit code :: ${code}`;
     });
 
     const threadId= worker.threadId;
@@ -852,10 +901,8 @@ const createWorker = () => {
       ...worker_servers_map,
       [threadId]: []
     }
-    WORKER_MAP[threadId]= {
-        status: workerStatusEnum.idle,
-        worker: worker
-    }
+
+    WORKER_MAP[threadId]= new WorkerObj(workerStatusEnum.idle, worker)
 
     return worker;
   } catch (error) {
@@ -863,36 +910,32 @@ const createWorker = () => {
   }
 };
 
-
 const versionJSON = nodeFs.readFileSync(path.join(__dirname, '../public/health.json')).toString();
 app.get('/health', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.send(versionJSON);
+  if(isPreloaded){
+    res.setHeader('Content-Type', 'application/json');
+    res.send(versionJSON);
+  }
 });
 
-// BASE SERVER STARTUP
-const serverStart = async() => {
-  // Create server gen worker
-  await createWorker();
-
-  // console.log('WORKER_MAP', WORKER_MAP)
+const serverStart = () => {
   let PORT = `${process.env.SERVER_PORT}`;
   if (!process.env.SERVER_PORT) {
     PORT = 8080;
   }
   wsServer.on('request', app);
   wsServer.listen(PORT, () => {
-    console.log(` Ws server Listening on port ${wsServer.address().port} 🚀🚀🚀`)
+    console.log("\x1b[32m%s\x1b[0m", `Server istening on port ${wsServer.address().port} 🚀🚀🚀`)
   }) 
+}
+
+// INIT STARTUP
+const initilize = async() => {
+  // badass console logo :D
+  console.log("\x1b[35m%s\x1b[0m", ` _______ _       _     _ _     _ ______  _______ \r\n(_______|_)     (_)   | (_)   (_|____  \\(_______)\r\n _    _  _       _____| |_     _ ____)  )_____   \r\n| |  | || |     |  _   _) |   | |  __  (|  ___)  \r\n| |__| || |_____| |  \\ \\| |___| | |__)  ) |_____ \r\n \\______)_______)_|   \\_)\\_____\/|______\/|_______)`)
+  await createWorker();
 };
 
-process.on('unhandledRejection', (reason, p) => {
-  console.log('Unhandled Rejection at: Promise')
-  logger.debug('This is probably from a closed websocket');
 
-  // application specific logging, throwing an error, or other logic here
-});
-
-
-serverStart();
+initilize();
 

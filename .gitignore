@@ -4,3 +4,8 @@ node_modules
 .vscode/
 coverage
 .nyc_output
+.clinic
+src/config.json
+src/test_spec.js
+src/trial.js
+src/.clinic

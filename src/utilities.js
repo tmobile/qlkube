@@ -51,7 +51,7 @@ function mapK8ApiPaths(oas, pathNames, graphQlSchemaMap) {
 }
 
 const translateOpenAPIToGraphQLREV = (data) => {
-  console.log('call preprocess util!')
+  console.log('-----')
   let schemaTypeMap = {};
 
   Object.entries(data.operations).forEach(([operationId, operation]) => {
