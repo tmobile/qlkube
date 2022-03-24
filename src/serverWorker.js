@@ -38,6 +38,7 @@ let internalServerReference= {};
 let clusterUrl_ServerUrl_map= {};
 const pubsub = new PubSub();
 
+const SwaggerClient = require('swagger-client')
 
 
 const generateGqlServer2 = async(port, schema) => {
@@ -95,6 +96,7 @@ const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
     const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
     const subs = await getWatchables(oasWatchable);
     const oas = deleteWatchParameters(oasWatchable);
+    // const check = await SwaggerClient.resolve({ spec: oasRaw });
 
     console.log('Create Schema')
     const schema = await createSchema(
