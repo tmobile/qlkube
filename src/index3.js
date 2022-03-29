@@ -912,10 +912,10 @@ const createWorker = () => {
 
 const versionJSON = nodeFs.readFileSync(path.join(__dirname, '../public/health.json')).toString();
 app.get('/health', (req, res) => {
-  if(isPreloaded){
+  // if(isPreloaded){
     res.setHeader('Content-Type', 'application/json');
     res.send(versionJSON);
-  }
+  // }
 });
 
 const serverStart = () => {
