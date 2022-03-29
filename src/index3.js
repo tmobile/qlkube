@@ -27,7 +27,7 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 const inCluster = process.env.IN_CLUSTER !== 'false';
 logger.info({ inCluster }, 'cluster mode configured');
 
-const rawConfig= nodeFs.readFileSync(path.join(__dirname, './config.json'));
+const rawConfig= nodeFs.readFileSync(path.join(__dirname, './config/config.json'));
 const config= JSON.parse(rawConfig);
 
 

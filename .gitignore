@@ -5,7 +5,7 @@ node_modules
 coverage
 .nyc_output
 .clinic
-src/config.json
+src/config
 src/test_spec.js
 src/trial.js
 src/.clinic
