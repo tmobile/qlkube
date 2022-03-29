@@ -781,6 +781,7 @@ const onWorkerStarted = async() => {
   // ## Better solution in future
   const getBasicToken = async() => {
     try {
+      console.log(`getBasicToken :: ${process.env.conducktor_k8s_onboard_user}`)
       if(process.env.conducktor_k8s_onboard_user&&process.env.conducktor_k8s_onboard_password){
         const basicAuthFormat= `${process.env.conducktor_k8s_onboard_user}:${process.env.conducktor_k8s_onboard_password}`;
         const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
