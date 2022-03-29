@@ -13,11 +13,11 @@ const {
 } = require('./schema');
 const { useServer }  = require('graphql-ws/lib/use/ws');
 const WebSocketServer  = require('ws').Server; // yarn add ws
-const pubsub = new PubSub();
 const getOpenApiSpec = require('./oas');
 const { logger } = require('./log');
 
 const { PubSub } = require('apollo-server-express');
+const pubsub = new PubSub();
 
 const SwaggerParser = require("@apidevtools/swagger-parser");
 const SwaggerClient = require('swagger-client')

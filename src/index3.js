@@ -781,8 +781,8 @@ const onWorkerStarted = async() => {
   // ## Better solution in future
   const getBasicToken = async() => {
     try {
-      if(process.env.PRINCIPAL_USER&&process.env.PRINCIPAL_PASS){
-        const basicAuthFormat= `${process.env.PRINCIPAL_USER}:${process.env.PRINCIPAL_PASS}`;
+      if(process.env.conducktor_k8s_onboard_user&&process.env.conducktor_k8s_onboard_password){
+        const basicAuthFormat= `${process.env.conducktor_k8s_onboard_user}:${process.env.conducktor_k8s_onboard_password}`;
         const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
         var options = {
           method: 'POST',
@@ -815,7 +815,6 @@ const onWorkerStarted = async() => {
   //check and preload
   if(config?.preLoad){
     const token= await getBasicToken();
-    console.log(token)
     if(!token.error){
       const preLoadList= config.preLoad;
       preLoadCount= preLoadList?.length;
@@ -830,6 +829,7 @@ const onWorkerStarted = async() => {
       }
     }
   }else{
+    console.log('no config')
     serverStart();
     isPreloaded=true;
   }
