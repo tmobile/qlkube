@@ -713,7 +713,6 @@ const onPostPreLoad = (threadId, clusterUrl, commStatus) => {
   console.log('\x1b[36m%s\x1b[0m', `\r[${dots}${empty}] ${preLoadStatus_actual}%`)
   if(preLoadCurrent === preLoadCount){
     console.log("\x1b[32m%s\x1b[0m", `Pre loading complete! :: success ${preLoadSuccess} :: failed ${preLoadFailed}`);
-    serverStart();
     isPreloaded=true;
   }
 }
@@ -812,6 +811,7 @@ const onWorkerStarted = async() => {
 
 
   console.log('Worker has started');
+  serverStart();
 
   //check and preload
   if(config?.preLoad){
@@ -831,7 +831,6 @@ const onWorkerStarted = async() => {
     }
   }else{
     console.log('no config')
-    serverStart();
     isPreloaded=true;
   }
 }
@@ -913,10 +912,10 @@ const createWorker = () => {
 
 const versionJSON = nodeFs.readFileSync(path.join(__dirname, '../public/health.json')).toString();
 app.get('/health', (req, res) => {
-  // if(isPreloaded){
+  if(isPreloaded){
     res.setHeader('Content-Type', 'application/json');
     res.send(versionJSON);
-  // }
+  }
 });
 
 const serverStart = () => {
