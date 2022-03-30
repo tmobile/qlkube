@@ -781,9 +781,9 @@ const onWorkerStarted = async() => {
   // ## Better solution in future
   const getBasicToken = async() => {
     try {
-      console.log(`getBasicToken :: ${process.env.conducktor_k8s_onboard_user}`)
-      if(process.env.conducktor_k8s_onboard_user&&process.env.conducktor_k8s_onboard_password){
-        const basicAuthFormat= `${process.env.conducktor_k8s_onboard_user}:${process.env.conducktor_k8s_onboard_password}`;
+      console.log(`getBasicToken :: ${process.env.CONDUCKTOR_K8S_ONBOARD_USER}`)
+      if(process.env.CONDUCKTOR_K8S_ONBOARD_USER&&process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD){
+        const basicAuthFormat= `${process.env.CONDUCKTOR_K8S_ONBOARD_USER}:${process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD}`;
         const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
         var options = {
           method: 'POST',

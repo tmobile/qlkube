@@ -8,4 +8,5 @@ coverage
 src/config
 src/test_spec.js
 src/trial.js
+src/trial2.js
 src/.clinic
