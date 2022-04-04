@@ -249,7 +249,7 @@ const processDefinitions = (specDefs) => {
     // main loop :: go through all derefed spec defs
     // process each using recursive function
     for(const [path, spec] of Object.entries(specDefs)){
-        // console.log('path', specDefs)
+        console.log('path', specDefs)
         const typeName= path.replaceAll('.', "");
         miniStream=[{
             name: typeName,
