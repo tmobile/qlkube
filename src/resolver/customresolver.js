@@ -15,14 +15,52 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
         apiUrl = apiUrl.replace('{namespace}', args['namespace']);
         apiUrl = apiUrl.replace('{name}', args['name']);
         logger.debug("getK8SCustomResolver : processing url " + apiUrl);
-        const apiHeaders = {
-            Authorization: context.authorization
-        };
-        options = {
-            method: httpMethod,
-            url: apiUrl,
-            headers: apiHeaders,
-        };
+        // console.log('REQUEST ARGS!!', args, args?._Input&&JSON.parse(args?._Input))
+
+        if(httpMethod === 'put'){
+            options = {
+                method: httpMethod,
+                url: apiUrl,
+                headers: apiHeaders,
+                json: JSON.parse(args?._Input)
+            };
+        }
+        else if(httpMethod === 'patch'){
+            const apiHeaders = {
+                Authorization: context.authorization,
+                'Content-Type': 'application/strategic-merge-patch+json'
+            };
+            options = {
+                method: httpMethod,
+                url: apiUrl,
+                headers: apiHeaders,
+                body: args?._Input
+            };
+        }
+        else if(httpMethod === 'post'){
+            const apiHeaders = {
+                Authorization: context.authorization,
+                'Content-Type': 'application/json'
+            };
+            options = {
+                method: httpMethod,
+                url: apiUrl,
+                headers: apiHeaders,
+                body: args?._Input
+            };
+        }
+        else{
+            const apiHeaders = {
+                Authorization: context.authorization,
+                'Content-Type': 'application/json'
+            };
+            options = {
+                method: httpMethod,
+                url: apiUrl,
+                headers: apiHeaders
+            };
+        }
+
         httpLog(`Call ${options.method.toUpperCase()} ${options.url}\n` +
             `headers: ${JSON.stringify(options.headers)}\n` +
             `request body: ${options.body}`);
@@ -34,6 +72,7 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
                     return;
                 }
                 httpLog(`${response.statusCode} - ${body}`);
+
                 // handling errors
                 if (response.statusCode < 200 || response.statusCode > 299) {
                     const errorString = `Could not invoke operation ${response.statusCode}`;
@@ -44,6 +83,8 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
                     catch (e) {
                         responseBody = body;
                     }
+                    console.log('RESPONSE ERROR:: ', responseBody)
+
                     const extensions = {
                         method: options.method,
                         path: options.path,
@@ -69,9 +110,7 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
                 try {
                     responseBody = JSON.parse(body);
                 } catch (e) {
-                    const errorString = `Cannot JSON parse response body of ` +
-                        `operation ${operation.operationString} ` +
-                        `even though it has content-type 'application/json'`;
+                    const errorString = `Error thrown parsing response body :: ${e}`;
                     httpLog(errorString);
                     reject(errorString);
                 }

@@ -68,68 +68,47 @@ process.on('unhandledRejection', (reason, p) => {
 // 1 return promise that has set interval checking completed servers
 // 2 create promis and pass it all the way into connect client queue -> call resolver when server completes
 app.get('/gql', async(req, res) => {
-  console.log('recieved request');
-  console.log(req?.headers?.connectionparams);
 
-    if(req?.headers?.connectionparams){
-      const queryParams= JSON.parse(req?.headers?.connectionparams);
-      const { query, authorization, clusterUrl }= queryParams;
-      console.log('recieved request', query, clusterUrl);
+  if(req?.headers?.connectionparams){
+    const queryParams= JSON.parse(req?.headers?.connectionparams);
+    const { query, authorization, clusterUrl }= queryParams;
+    // console.log('recieved request', query, clusterUrl);
 
-      const queryCallbacks = {
-        isGenerating: () => {
-          res.write(JSON.stringify({
-            status: 'generating'
-          }))
-        },
-        queryServer: async(gqlServerUrl, connectionParams, query) => {
-          const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams, updateServerUsage);
-          console.log('queryResponse', queryResponse)
-          res.write(JSON.stringify({
-            data:  queryResponse,
-            status: 'complete'
-          }));
-          res.end()
-        }
+    const queryCallbacks = {
+      isGenerating: () => {
+        res.write(JSON.stringify({
+          status: 'generating'
+        }))
+      },
+      queryServer: async(gqlServerUrl, connectionParams, query) => {
+        const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams, updateServerUsage);
+        res.write(JSON.stringify({
+          data:  queryResponse,
+          status: 'complete'
+        }));
+        res.end()
       }
-      
-      gqlServerRouter(
-        null,
-        clusterUrl,
-        null,
-        null,
-        authorization,
-        query,
-        queryParams,
-        requestTypeEnum.query,
-        queryCallbacks
-      ) 
     }
-
+    
+    gqlServerRouter(
+      null,
+      clusterUrl,
+      null,
+      null,
+      authorization,
+      query,
+      queryParams,
+      requestTypeEnum.query,
+      queryCallbacks
+    ) 
+  }
 });
 
-// setInterval(() => {
-//   // console.log(' ')
-//   // console.log(' ')
-//   // console.log(' ')
 
-//   // console.log('Servers', Object.keys(serverCache.servers))
-//   // // console.log('Servers', serverCache.servers)
-//   // console.log('internalSubObjMap', internalSubObjMap)
-//   // console.log('clientToInternalSubIdMap', clientToInternalSubIdMap) 	branch = feature/qlkube2
-
-//   // console.log('clientInternalWsMap', clientInternalWsMap)
-//   console.log('clientToInternalSubIdMap',clientToInternalSubIdMap)
-//   for(let idk of Object.keys(clientToInternalSubIdMap)){
-//     // console.log('--', idk, clientToInternalSubIdMap[idk]?.length)
-//   }
-//   console.log('MEM_USAGE', process.memoryUsage().heapTotal/1000000)
-//   // checkServerConnections()
-// }, 20000) 
 
 // callback to update server last used
 const updateServerUsage = (clusterUrl) => {
-  console.log('SERVER USAGE CALLBACK!')
+  // console.log('SERVER USAGE CALLBACK!')
   if(serverCache.getServer(clusterUrl)){
     serverCache.refreshServerUsage(clusterUrl);
   }
@@ -433,9 +412,10 @@ const recycleServer = (
   genType
 ) => {
   // get least used server
-  const { server:leastUsedInternalServer, timeDiff_minutes }= serverCache.getMinUsedServer();
+  const { serverData:leastUsedInternalServer, timeDiff_minutes }= serverCache.getMinUsedServer();
+  console.log('RECYCLE', leastUsedInternalServer, timeDiff_minutes)
   if(leastUsedInternalServer){
-    const { threadId, clusterUrl, port }= leastUsedInternalServer;
+    const { threadId, clusterUrl, port: freePort }= leastUsedInternalServer;
 
     addConnectionToConnectQueue(
       reqType,
@@ -449,7 +429,7 @@ const recycleServer = (
     );
     //add cluster to currently gen
     currentGeneratingServers.push(replacementClusterUrl);
-    serverCache.movePortUsedToPending(port, replacementClusterUrl);
+    serverCache.movePortUsedToPending(freePort, replacementClusterUrl);
 
     // create job to destroy internal server
     onAddWorkerJob(
@@ -462,8 +442,8 @@ const recycleServer = (
 
     const genFromCache= genType==='cache' ? true : false;
 
-    genFromCache&&genServerFromCacheComm(freePort, clusterUrl);
-    !genFromCache&&genServerComm(freePort, clusterUrl, token);
+    genFromCache&&genServerFromCacheComm(freePort, replacementClusterUrl);
+    !genFromCache&&genServerComm(freePort, replacementClusterUrl, token);
   }
 }
 
@@ -849,6 +829,7 @@ const createWorker = () => {
           const clusterUrl= processDetails;
           // handle waiting connections
           // and update cache
+          console.log('return generated')
           onServerGenerated(
             processDetails.clusterUrl, 
             processDetails.serverUrl,
@@ -858,6 +839,7 @@ const createWorker = () => {
         }
         else if(process === workerProcesseesEnum.destroy_server){
           const { clusterUrl, success }= processDetails;
+          console.log('return destroyed')
           onInternalServerDestroyed(clusterUrl, worker.threadId)
         }
         else if(process === workerProcesseesEnum.init){

@@ -92,10 +92,13 @@ exports.getWatchables = (oas) => {
     ) {
       const currentPathKeys = Object.keys(path);
       const pathKind =
-        path[currentPathKeys[0]]['x-kubernetes-group-version-kind'].kind;
+        path[currentPathKeys[0]]['x-kubernetes-group-version-kind']?.kind;
       const hasNamespaceUrl = pathName.includes('{namespace}');
+      if(!pathKind){
+        continue;
+      }
       if (!hasNamespaceUrl) {
-        if (mappedWatchPath[pathKind]) {
+        if (mappedWatchPath?.[pathKind]) {
           const tempPaths = [...mappedWatchPath[pathKind], pathName];
           mappedWatchPath[pathKind.toUpperCase()] = tempPaths;
         } else {
@@ -139,19 +142,6 @@ exports.deleteWatchParameters = (oas) => {
  * @param {object} oas The Open API Spec from k8s cluster
  */
 exports.deleteDeprecatedWatchPaths = (oas) => {
-  const getCircularReplacer = () => {
-    const seen = new WeakSet();
-    return (key, value) => {
-        if (typeof value === "object" && value !== null) {
-        if (seen.has(value)) {
-            return;
-        }
-        seen.add(value);
-        }
-        return value;
-    };
-  };
-  // const newOAS = JSON.parse(JSON.stringify(oas, getCircularReplacer())); // Javascript is wierd, this is deep copy.
   const newOAS = JSON.parse(JSON.stringify(oas)); // Javascript is wierd, this is deep copy.
   for (const pathName in newOAS.paths) {
     // don't include /watch/ paths since they are deprecated.
@@ -281,10 +271,6 @@ function createSubscriptionSchema(
       pathUrl = injectedUrl;
     }
 
-    // console.log('pathUrl', pathUrl)
-    // console.log('context :DDDDD', context)
-
-    // console.log(context.clientId, context.subId,args)
     const clientId = context.clientId;
     const subId = context.subId;
     const subArgs = args;
@@ -361,13 +347,11 @@ exports.createSchema = async (
     k8PathKeys,
     graphQlSchemaMap
   );
-  // console.log('baseSchema', baseSchema)
   const schemas = [baseSchema];
   const pathMap = {};
 
   subscriptions.forEach((element) => {
     let ObjectEventName;
-    // console.log('element.k8sUrl', element.k8sUrl)
     if (element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log') {
       element.k8sType = `${element.k8sType}Logs`
       ObjectEventName = `${element.k8sType}Event`;
@@ -393,24 +377,20 @@ exports.createSchema = async (
   return mergeSchemas({ schemas });
 };
 
-exports.testHydateSubscriptions = async (
+exports.createSchema_Trial = async (
   baseSchema,
-  subscriptions,
   watchableNonNamespacePaths,
-  mappedNamespacedPaths
+  mappedNamespacedPaths,
+  subscriptions
 ) => {
-  // console.log('oas', oas)
 
-  // const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl);
-  // console.log('baseSchema', baseSchema)
   const schemas = [baseSchema];
   const pathMap = {};
 
   subscriptions.forEach((element) => {
     let ObjectEventName;
-    // console.log('element.k8sUrl', element.k8sUrl)
     if (element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log') {
-      element.k8sType = `${element.k8sType}Logs`
+      element.k8sType = `${element.k8sType}Logs`;
       ObjectEventName = `${element.k8sType}Event`;
     } else {
       ObjectEventName = `${element.k8sType}Event`;

@@ -43,7 +43,6 @@ const connectSub = (
                 {
                   next: onNext,
                   error: (er) => console.log('Subscription error!' ,er),
-                //   complete: () => console.log('Subscription complete!', connectionParams.clientSubId),
                   complete: () => console.log('Subscription complete!', connectionParams.clientSubId),
                   onclose: () => console.log('onclose '),
                   
@@ -67,7 +66,7 @@ const connectQuery = async(
   connectionParams,
   serverUsageCallback
 ) => {
-  console.log('recieved', connectionParams?.queryVariables)
+  // console.log('recieved', connectionParams?.queryVariables)
 
     const client = createClient({
       url: internalServerUrl,
@@ -94,7 +93,7 @@ const connectQuery = async(
           {
             next: (data) => {
               result = data;
-              console.log('QUERY DATA next', data)
+              // console.log('QUERY DATA next', data)
             },
             error: (err) => console.log('QUERY ERROR', err),
             complete: () => resolve(result)

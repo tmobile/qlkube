@@ -1,27 +1,16 @@
 
 const {
-  Worker, 
   isMainThread, 
   parentPort, 
   workerData
 } = require('worker_threads');
-const {
-  createSchema,
-  getWatchables,
-  deleteDeprecatedWatchPaths,
-  deleteWatchParameters,
-} = require('./schema');
 const { useServer }  = require('graphql-ws/lib/use/ws');
 const WebSocketServer  = require('ws').Server; // yarn add ws
 const getOpenApiSpec = require('./oas');
 const { logger } = require('./log');
-
 const { PubSub } = require('apollo-server-express');
-const pubsub = new PubSub();
-
-const SwaggerParser = require("@apidevtools/swagger-parser");
-const SwaggerClient = require('swagger-client')
-
+const { printColor } = require('./utils/consoleColorLogger')
+const { getSchema } = require('./utils/process-oas')
 const { workerProcesseesEnum, workerCommandEnum, workerProcessStatusEnum } = require('./enum/workerEnum')
 
 
@@ -42,6 +31,7 @@ const generateGqlServer2 = async(port, schema) => {
       port: port,
       path: '/gql'
     });
+
     await useServer({ 
       schema: schema, 
       context: ({req, connectionParams }) => {
@@ -51,7 +41,8 @@ const generateGqlServer2 = async(port, schema) => {
           clientId,
           emitterId
         }= connectionParams;
-  
+        const pubsub = new PubSub();
+
         return {
           authorization,
           clusterUrl,
@@ -73,40 +64,56 @@ const generateGqlServer2 = async(port, schema) => {
 }
 
 // GENERATES CLUSTER SCHEMA FOR NEW SERVERS
-const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
+const generateClusterSchema_Replacer = async(kubeApiUrl, schemaToken) => {
   try {
-    logger.debug('Generating cluster schema', kubeApiUrl)
+    logger.debug('Generating cluster schema - Custom', kubeApiUrl)
     const authTokenSplit = schemaToken.split(' ');
     const token = authTokenSplit[authTokenSplit.length - 1];
     const oasRaw = await getOpenApiSpec(kubeApiUrl, token);
-    const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
-    const subs = await getWatchables(oasWatchable);
-    const oas = deleteWatchParameters(oasWatchable);
-
-    if(oas?.code || Object.keys(oas)?.length <2){
-      console.log('error...')
-      return {
-        error: {
-          errorPayload: `error retrieving schema`
-        }
-      }
-    } 
-    // const check = await SwaggerClient.resolve({ spec: oasRaw });
-
-    // console.log('Create Schema', kubeApiUrl)
-    const schema = await createSchema(
-      oas,
-      kubeApiUrl,
-      subs.mappedWatchPath,
-      subs.mappedNamespacedPaths,
-    ); // takes the longest
-    console.log(`Generated Schema :: ${kubeApiUrl}`)
-
+    const schema = await getSchema(
+      oasRaw
+    );
     return schema
   } catch (error) {
-    console.log('worker schema gen error' + error)
+    printColor('red', `worker schema gen error :: ${error}`)
   }
 }
+
+// GENERATES CLUSTER SCHEMA FOR NEW SERVERS :: DEPRECIATED
+// const generateClusterSchema = async(kubeApiUrl, schemaToken) => {
+//   try {
+//     logger.debug('Generating cluster schema', kubeApiUrl)
+//     const authTokenSplit = schemaToken.split(' ');
+//     const token = authTokenSplit[authTokenSplit.length - 1];
+//     const oasRaw = await getOpenApiSpec(kubeApiUrl, token);
+//     const oasWatchable = deleteDeprecatedWatchPaths(oasRaw);
+//     const subs = await getWatchables(oasWatchable);
+//     const oas = deleteWatchParameters(oasWatchable);
+
+//     if(oas?.code || Object.keys(oas)?.length <2){
+//       console.log('error...')
+//       return {
+//         error: {
+//           errorPayload: `error retrieving schema`
+//         }
+//       }
+//     } 
+//     // const check = await SwaggerClient.resolve({ spec: oasRaw });
+
+//     // console.log('Create Schema', kubeApiUrl)
+//     const schema = await createSchema(
+//       oas,
+//       kubeApiUrl,
+//       subs.mappedWatchPath,
+//       subs.mappedNamespacedPaths,
+//     ); // takes the longest
+//     printColor('blue', `Generated Schema :: ${kubeApiUrl}`)
+
+//     return schema
+//   } catch (error) {
+//     console.log('worker schema gen error' + error)
+//   }
+// }
 
 const destroyInternalServer = async(clusterUrl) => {
   try {
@@ -135,11 +142,11 @@ const onGenerateCommand = async(port, kubeApiUrl, schemaToken) => {
       process: workerProcesseesEnum.gen_server,
       processDetails: kubeApiUrl
     });
-    const schema= await generateClusterSchema(kubeApiUrl, schemaToken)
+    // const schema= await generateClusterSchema(kubeApiUrl, schemaToken)
+    const schema= await generateClusterSchema_Replacer(kubeApiUrl, schemaToken)
     if(schema){
       const serverDetails = await generateGqlServer2(port, schema);
-      console.log("\x1b[34m%s\x1b[0m", `GEN SERVER COMPLETE :: ${kubeApiUrl}`);
-
+      printColor('blue', `GEN SERVER COMPLETE  :: ${kubeApiUrl}`)
       const { serverUrl }= serverDetails
       clusterUrl_ServerUrl_map[kubeApiUrl]= serverUrl;
       // tell main generation is complete

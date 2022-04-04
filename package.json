@@ -2,7 +2,7 @@
   "name": "qlkube",
   "version": "1.0.0",
   "description": "",
-  "main": "src/index.js",
+  "main": "src/index3.js",
   "scripts": {
     "start": "node src/index3.js",
     "local": "DEBUG=http IN_CLUSTER=false npm start",
@@ -13,7 +13,6 @@
   "keywords": [],
   "author": "",
   "dependencies": {
-    "@apidevtools/swagger-parser": "^10.0.3",
     "@graphql-tools/load": "^7.5.2",
     "@graphql-tools/url-loader": "^7.8.0",
     "@graphql-tools/wrap": "^8.4.3",

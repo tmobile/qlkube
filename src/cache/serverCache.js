@@ -1,5 +1,5 @@
 const gqlPortRange={
-    max:1120,
+    max:1130,
     min:1115
 }
 
@@ -81,7 +81,7 @@ const serverCache = module.exports ={
       const leastUsedInternalServer= this.servers[minUsedServer];
       const diffMs = (new Date(leastUsedInternalServer?.lastUsed) - new Date())*-1;
       var diffMins = Math.round(((diffMs % 86400000) % 3600000) / 60000); // minutes
-
+      console.log('get nin server', minUsedServer)
       return { serverData: this.servers[minUsedServer], timeDiff_minutes: diffMins };
     },
     refreshServerUsage: function(serverkey) {
@@ -90,7 +90,7 @@ const serverCache = module.exports ={
             lastUsed: new Date().toUTCString()
         }
         this.servers[serverkey]= refreshedServerData;
-        console.log('update usage', serverkey, refreshedServerData.lastUsed)
+        // console.log('update usage', serverkey, refreshedServerData.lastUsed)
     },
 
 
