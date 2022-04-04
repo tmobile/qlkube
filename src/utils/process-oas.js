@@ -249,6 +249,7 @@ const processDefinitions = (specDefs) => {
     // main loop :: go through all derefed spec defs
     // process each using recursive function
     for(const [path, spec] of Object.entries(specDefs)){
+        // console.log('path', specDefs)
         const typeName= path.replaceAll('.', "");
         miniStream=[{
             name: typeName,
@@ -380,6 +381,8 @@ const getSchema = async(
         const derefSpec = await dereferenceOpenApiSpec(oas);
         const specDefs= derefSpec?.spec?.definitions;
         const specPaths= derefSpec?.spec?.paths;
+        console.log('keys deref', Object.keys(derefSpec));
+        console.log('keys deref2', Object.keys(derefSpec?.spec));
 
         if(!(derefSpec&&subs&&specDefs&&specPaths)) throw new Error('error dereferencing api spec');
         printColor('yellow', 'Schema Generate Started...')
