@@ -15,9 +15,12 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
         apiUrl = apiUrl.replace('{namespace}', args['namespace']);
         apiUrl = apiUrl.replace('{name}', args['name']);
         logger.debug("getK8SCustomResolver : processing url " + apiUrl);
-        // console.log('REQUEST ARGS!!', args, args?._Input&&JSON.parse(args?._Input))
 
+        let options;
         if(httpMethod === 'put'){
+            const apiHeaders = {
+                Authorization: context.authorization
+            };
             options = {
                 method: httpMethod,
                 url: apiUrl,
@@ -83,8 +86,6 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
                     catch (e) {
                         responseBody = body;
                     }
-                    console.log('RESPONSE ERROR:: ', responseBody)
-
                     const extensions = {
                         method: options.method,
                         path: options.path,
