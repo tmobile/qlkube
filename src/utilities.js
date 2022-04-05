@@ -12,8 +12,6 @@ async function mapGraphQlDefaultPaths(spec) {
         resolve(translateOpenAPIToGraphQLREV([oas], options));
       })
       .catch((err) => {
-        console.log('err wowwww', err)
-
         resolve( {
           error:{
             errorPayload:err
@@ -56,11 +54,9 @@ function mapK8ApiPaths(oas, pathNames, graphQlSchemaMap) {
 }
 
 const translateOpenAPIToGraphQLREV = (data) => {
-  console.log('-----')
   let schemaTypeMap = {};
 
   Object.entries(data.operations).forEach(([operationId, operation]) => {
-    // console.log(operation.responseDefinition?.targetGraphQLType)
     const field = schema_builder_1.getGraphQLType({
       def: operation.responseDefinition,
       data,

@@ -32,7 +32,6 @@ const connectSub = (
   
       (async () => {
             const onNext = (val) => {
-                // console.log('recieved', val)
                 serverUsageCallback(connectionParams?.clusterUrl)
                 em.emit(emitterId, val);
               };
@@ -52,11 +51,11 @@ const connectSub = (
               pairSubToClient(clientId, client, internalSubId, connectionParams.clientSubId)
 
 
-      })().catch(e => console.log('error...', e));
+      })().catch(e => console.log('Subscription error ::', e));
   
       return em;
     } catch (error) {
-      console.log('Connection failed...', error)
+      console.log('Subscription connection failed ::', error)
     }
 }
 
@@ -66,7 +65,6 @@ const connectQuery = async(
   connectionParams,
   serverUsageCallback
 ) => {
-  // console.log('recieved', connectionParams?.queryVariables)
 
     const client = createClient({
       url: internalServerUrl,
@@ -81,7 +79,7 @@ const connectQuery = async(
         ),
         connectionParams
     });
-    let wow = await (async () => {
+    let queryResp = await (async () => {
       return result = await new Promise((resolve, reject) => {
         let result
         client.subscribe(
@@ -93,16 +91,15 @@ const connectQuery = async(
           {
             next: (data) => {
               result = data;
-              // console.log('QUERY DATA next', data)
             },
-            error: (err) => console.log('QUERY ERROR', err),
+            error: (err) => console.log('Query error :: ', err),
             complete: () => resolve(result)
           }
         )
       })
-    })().catch(e => console.log('error...', e))
+    })().catch(e => console.log('Query error :: ', e))
     serverUsageCallback(connectionParams?.clusterUrl);
-    return wow;
+    return queryResp;
   }
 
 

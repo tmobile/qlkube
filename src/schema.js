@@ -325,7 +325,7 @@ function createSubscriptionSchema(
   return schema;
 }
 
-
+// ## Depreciated
 exports.createSchema = async (
   oas,
   kubeApiUrl,
@@ -333,8 +333,6 @@ exports.createSchema = async (
   mappedNamespacedPaths,
   finalOas
 ) => {
-  // console.log('oas', oas.definitions)
-  // console.log('oas', Object.keys(oas))
 
   //.paths details about each endpoint
   //.definitions no clue but looks important

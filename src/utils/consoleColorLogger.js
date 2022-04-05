@@ -16,6 +16,10 @@ const printColor = (msgType, msg) => {
             console.log('\x1b[32m%s\x1b[0m', msg);
             break;
         }
+        case('magenta'):{
+            console.log('\x1b[35m%s\x1b[0m', msg);
+            break;
+        }
         default:{
             console.log(msg);
         }

@@ -91,9 +91,6 @@ const _setupWatch = async function (
     };
 
     const publishEvent = (type, obj) => {
-      // logger.debug(
-      //   `watcher event:  ${type}, namespace: ${obj.metadata.namespace} name: ${obj.metadata.name}`
-      // );
       pubsub.publish(type, { event: type, object: obj });
     };
 
@@ -101,7 +98,6 @@ const _setupWatch = async function (
     let timerId;
 
     const watchDone = (err) => {
-      // logger.debug('watch done', err, subId, clientId, url);
 
       if (timerId != null) { clearTimeout(timerId); }
       timerId = setTimeout(async () => {
@@ -116,7 +112,7 @@ const _setupWatch = async function (
     };
 
     const watchError = (err) => {
-      // logger.error('watch err!', err.message);
+      logger.error('watch err', err.message);
     };
 
     const queryParams = {
@@ -137,11 +133,10 @@ const _setupWatch = async function (
           watchError
         )
         .then((req) => {
-          // logger.debug('watch request: ', url, subId, clientId);
           return req;
         })
         .catch((err) => {
-          // logger.error('watch error: ', err.message);
+          logger.error('watch error: ', err.message);
         });
     };
 
@@ -151,7 +146,7 @@ const _setupWatch = async function (
     mapWatchToSubId(subId, returnedWatch);
     mapPathClientKeyToSubId(url, clientId, subId);
   } catch (error) {
-    console.log('error', error)
+    console.log('watch caught error', error)
   }
   
 }
@@ -411,7 +406,7 @@ function disconnectSpecificSocket(clientId, _subId) {
       cache.set(pathClientKey_subId_map, pathClientKey_subId_map_cacheClone);
     }
   } catch (error) {
-    console.log('disconnectSpecificSocket: ' + error)
+    console.log('disconnectSpecificSocket error :: ' + error)
   } 
 
 }

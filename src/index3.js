@@ -1,35 +1,42 @@
 const express = require('express');
-const nodeFs = require('fs');
 require('dotenv').config();
-const { logger } = require('./log');
+const nodeFs = require('fs');
 const cors = require('cors');
-
+const { logger } = require('./log');
 const { Worker } = require('worker_threads');
 const wsServer = require('http').createServer();
-const WebSocketServer  = require('ws').Server; // yarn add ws
+const WebSocketServer  = require('ws').Server;
 const wss = new WebSocketServer({ server: wsServer });
 const path = require('path')
-
-//------
-var request = require('request');
-
+const request = require('request');
 const bodyParser = require('body-parser');
-var process = require('process')
+const process = require('process');
 const serverCache = require('./cache/serverCache');
-
+const { 
+  workerProcesseesEnum, 
+  workerCommandEnum, 
+  workerStatusEnum, 
+  workerProcessStatusEnum 
+} = require('./enum/workerEnum');
+const { 
+  WorkerJob, 
+  WorkerObj, 
+  ConnectSubArg, 
+  ConnectQueryArg 
+} = require('./models/argumentTypes');
 const { connectSub, connectQuery } = require('./utils/internalServerConnect');
-const { workerProcesseesEnum, workerCommandEnum, workerStatusEnum, workerProcessStatusEnum } = require('./enum/workerEnum');
 const { requestTypeEnum } = require('./enum/requestEnum');
-const { WorkerJob, WorkerObj, ConnectSubArg, ConnectQueryArg } = require('./models/argumentTypes')
-//------
+const { printColor } = require('./utils/consoleColorLogger');
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 const inCluster = process.env.IN_CLUSTER !== 'false';
 logger.info({ inCluster }, 'cluster mode configured');
-
 const rawConfig= nodeFs.readFileSync(path.join(__dirname, './config/config.json'));
 const config= JSON.parse(rawConfig);
 
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
 
 let clientInternalWsMap={};
 let internalSubObjMap={}
@@ -37,16 +44,11 @@ let clientToInternalSubIdMap={};
 let rougeSocketMap={};
 
 let currentGeneratingServers= [];
-let pre_connectClientQueue= {};
 let connectClientQueue= {};
 
 let worker_servers_map= {};
 let clusterUrl_serverUrl_map= {};
 let WORKER_JOB_QUEUE= [];
-
-const app = express();
-app.use(cors());
-app.use(bodyParser.json());
 
 let preLoadCount= 0;
 let preLoadCurrent= 0;
@@ -59,8 +61,6 @@ let WORKER_MAP= {};
 process.on('unhandledRejection', (reason, p) => {
   console.log('Unhandled Rejection at: Promise')
   logger.debug('This is probably from a closed websocket');
-
-  // application specific logging, throwing an error, or other logic here
 });
 
 // GQL QUERIES
@@ -72,13 +72,11 @@ app.get('/gql', async(req, res) => {
   if(req?.headers?.connectionparams){
     const queryParams= JSON.parse(req?.headers?.connectionparams);
     const { query, authorization, clusterUrl }= queryParams;
-    // console.log('recieved request', query, clusterUrl);
-
     const queryCallbacks = {
       isGenerating: () => {
         res.write(JSON.stringify({
           status: 'generating'
-        }))
+        }));
       },
       queryServer: async(gqlServerUrl, connectionParams, query) => {
         const queryResponse= await connectQuery(gqlServerUrl, query, connectionParams, updateServerUsage);
@@ -86,10 +84,10 @@ app.get('/gql', async(req, res) => {
           data:  queryResponse,
           status: 'complete'
         }));
-        res.end()
+        res.end();
       }
     }
-    
+
     gqlServerRouter(
       null,
       clusterUrl,
@@ -100,38 +98,14 @@ app.get('/gql', async(req, res) => {
       queryParams,
       requestTypeEnum.query,
       queryCallbacks
-    ) 
+    ); 
   }
 });
 
-
-
 // callback to update server last used
 const updateServerUsage = (clusterUrl) => {
-  // console.log('SERVER USAGE CALLBACK!')
   if(serverCache.getServer(clusterUrl)){
     serverCache.refreshServerUsage(clusterUrl);
-  }
-}
-
-
-// ## recycle logic 
-// ## 1: servers without sockets and latest time
-// ## 2: servers without sockets
-// ## if neither, send error?
-// ------------------------------------------------------
-// Use this to update server timestamps for last use
-// If there are any connected sockets
-const checkServerConnections = () => {
-  for(let clusterUrl of Object.keys(serverCache?.servers)){
-    let socketCount=0;
-    serverCache.servers[clusterUrl]?.serverObj?.clients?.forEach((socket) => {
-      socketCount++;
-    });
-    if(socketCount > 0){
-      serverCache.refreshServerUsage(clusterUrl)
-    }
-    console.log('SERVER---', clusterUrl, socketCount);
   }
 }
 
@@ -139,16 +113,14 @@ const checkServerConnections = () => {
 // Keep track of Subid -> internal sub obj
 const pairSubToClient = (clientId, subObj, internalSubId, clientSubId) => {
   if(rougeSocketMap[clientSubId]){
-    console.log('DISPOSE - pairSubToClient', clientSubId)
     subObj.dispose();
-    delete rougeSocketMap[clientSubId]
+    delete rougeSocketMap[clientSubId];
     return;
   }
-
   internalSubObjMap[internalSubId]= subObj;
   clientToInternalSubIdMap[clientSubId]= internalSubId;
   if(!clientInternalWsMap[clientId]){
-    clientInternalWsMap[clientId]=[internalSubId]
+    clientInternalWsMap[clientId]=[internalSubId];
   }else{
     newClientData= clientInternalWsMap;
     newClientSubList= newClientData?.[clientId] || [];
@@ -161,7 +133,6 @@ const pairSubToClient = (clientId, subObj, internalSubId, clientSubId) => {
 // META WEBSOCKET CONNECTION HANDLER
 wss.on('connection', function connection(ws) {
   ws.addEventListener('error', (err) => console.log(err.message));
-
   ws.on('message', function message(data) {
     try {
       const connectionMessage= JSON.parse(data);
@@ -186,9 +157,9 @@ wss.on('connection', function connection(ws) {
             query,
             connectionParams,
             requestTypeEnum.subscribe
-          )
+          );
         }else{
-          ws.send('error', 'Invalid request')
+          ws.send('error', 'Invalid request');
         }
       }
 
@@ -197,7 +168,7 @@ wss.on('connection', function connection(ws) {
         destroySpeifiedInternalWebsocket(connectionParams.clientSubId, connectionParams.clientId, connectionParams?.clusterUrl);
       }
     } catch (error) {
-      logger.error('Ws handler error', error)
+      logger.error('Ws handler error', error);
       return {
         error: {
           errorPayload: error
@@ -210,7 +181,7 @@ wss.on('connection', function connection(ws) {
   ws.on('close', () => {
     try {
       // End all internal websockets for disconnected client
-      // logger.debug('Meta websocket closed for', ws.clientId);
+      logger.debug('Meta websocket closed for', ws.clientId);
       const currentClientId= ws.clientId;
       destroyCachedDataForClient(currentClientId);
     } catch (error) {
@@ -221,14 +192,13 @@ wss.on('connection', function connection(ws) {
       }
     }
   });
-
   ws.on('error', (err) => {
-    logger.error('meta ws error: ' + err );
+    logger.error('Meta ws error: ' + err );
   })
   ws.onclose = function(evt){
-    logger.debug('meta ws closure: ' + evt );
+    logger.debug('Meta ws closure: ' + evt );
   }
-  logger.debug('New meta websocket')
+  logger.debug('New Meta websocket');
 });
 
 // ENDS SPECIFIC INTERNAL SUB FOR CLIENT
@@ -255,7 +225,7 @@ const destroySpeifiedInternalWebsocket = (clientSubId, clientId, test) => {
 // ENDS ALL CACHED ROUTING DATA FOR CLIENT
 const destroyCachedDataForClient = (wsId) => {
   try {
-    logger.debug('Internal ws close request from', wsId)
+    logger.debug('Internal ws close request from', wsId);
     let internalSubsForClient=[];
     if(wsId&&clientInternalWsMap?.[wsId]?.length > 0){
       for(let cachedInternalSubId of clientInternalWsMap[wsId]){
@@ -265,22 +235,21 @@ const destroyCachedDataForClient = (wsId) => {
       };
       delete clientInternalWsMap[wsId];
     }
-    let newClientToInternalSubIdMap= {...clientToInternalSubIdMap}
+    let newClientToInternalSubIdMap= {...clientToInternalSubIdMap};
     for(let internalSubClientKey of Object.keys(clientToInternalSubIdMap)){
       if(internalSubsForClient.includes(clientToInternalSubIdMap[internalSubClientKey])){
-        delete newClientToInternalSubIdMap[internalSubClientKey]
+        delete newClientToInternalSubIdMap[internalSubClientKey];
       }
     }
     clientToInternalSubIdMap= newClientToInternalSubIdMap;
 
   } catch (error) {
-    console.log('destroyCachedDataForClient ' + error )
+    printColor('red', `destroyCachedDataForClient error :: ${error}`);
   }
 }
 
 const checkWorkersForServer = (serverId) => {
   for(let [workerId, servers] of Object.entries(worker_servers_map)){
-
     if(servers&&servers?.includes(serverId)){
       return {
         gqlServerUrl: clusterUrl_serverUrl_map[serverId],
@@ -295,14 +264,14 @@ const checkWorkersForServer = (serverId) => {
 const getIdleWorker = () => {
   for(let [workerId, workerData] of Object.entries(WORKER_MAP)){
     if(workerData.status === workerStatusEnum.idle){
-      return workerId
+      return workerId;
     }
   }
   return false;
 }
 
 // ROUTES ALL TRAFFIC, DETERMINES IF NEW GQL SERVER NEEDS GENERATION
-const gqlServerRouter = async(
+const gqlServerRouter = (
   emitterId, 
   clusterUrl, 
   clientId, 
@@ -313,95 +282,83 @@ const gqlServerRouter = async(
   requestMode,
   queryCallbacks
 ) => {
-  try {
+  const internalServerUrl= checkWorkersForServer(clusterUrl);
+  // SERVER EXISTS
+  if(internalServerUrl?.isRunning){
+    const { gqlServerUrl }= internalServerUrl;
 
-
-    const internalServerUrl= checkWorkersForServer(clusterUrl);
-    // SERVER EXISTS
-    if(internalServerUrl?.isRunning){
-      const { gqlServerUrl }= internalServerUrl;
-
-      // if sub
-      if(requestMode === requestTypeEnum.subscribe){
-        ws&&sendServerGenerationMessage(ws, 'end-generate')
-        setupSub(gqlServerUrl, emitterId, clientId, query, connectionParams, ws)
-      }
-
-      // if query
-      if(requestMode === requestTypeEnum.query){
-        console.log('Query!')
-        queryCallbacks.queryServer(gqlServerUrl, connectionParams, query);
-        return;
-      }
+    // if sub
+    if(requestMode === requestTypeEnum.subscribe){
+      ws&&sendServerGenerationMessage(ws, 'end-generate');
+      setupSub(gqlServerUrl, emitterId, clientId, query, connectionParams, ws);
     }
 
-    // SERVER DOSENT EXIST
+    // if query
+    if(requestMode === requestTypeEnum.query){
+      queryCallbacks.queryServer(gqlServerUrl, connectionParams, query);
+      return;
+    }
+  }
+
+  // SERVER DOSENT EXIST
+  else{
+    const freePort= serverCache.getUnusedPort();
+
+    //BEING GENERATED
+    if(connectClientQueue[clusterUrl]){
+      //add to connect queue
+      addConnectionToConnectQueue(
+        requestMode,
+        clusterUrl,
+        connectionParams,
+        emitterId,
+        clientId,
+        query,
+        queryCallbacks,
+        ws
+      );
+      queryCallbacks?.isGenerating();
+    }
+
+    // NOT GENERATING :: FREE PORT
+    else if(freePort){
+      genServerHandler(
+        freePort, 
+        requestMode,
+        token,
+        connectionParams,
+        emitterId,
+        clientId,
+        clusterUrl,
+        query,
+        ws,
+        queryCallbacks,
+        internalServerUrl&&!internalServerUrl?.isRunning&&'cache'
+      );
+    }
+
+    // NO FREE PORTS -> RECYCLE SERVER
     else{
-      // sendServerGenerationMessage(ws, 'start-generate')
-      const freePort= serverCache.getUnusedPort();
-
-
-      //BEING GENERATED
-      if(connectClientQueue[clusterUrl]){
-        //add to connect queue
-        addConnectionToConnectQueue(
-          requestMode,
-          clusterUrl,
-          connectionParams,
-          emitterId,
-          clientId,
-          query,
-          queryCallbacks,
-          ws
-        );
-        queryCallbacks?.isGenerating()
-      }
-
-      // NOT GENERATING :: FREE PORT
-      else if(freePort){
-        const queryResponse = await genServerHandler(
-          freePort, 
-          requestMode,
-          token,
-          connectionParams,
-          emitterId,
-          clientId,
-          clusterUrl,
-          query,
-          ws,
-          queryCallbacks,
-          internalServerUrl&&!internalServerUrl?.isRunning&&'cache'
-        );
-      }
-  
-      // NO FREE PORTS -> RECYCLE SERVER
-      else{
-        queryCallbacks?.isGenerating()
-
-        recycleServer(
-          clusterUrl, 
-          token,
-          requestMode,
-          connectionParams,
-          emitterId,
-          clientId,
-          query,
-          ws,
-          queryCallbacks,
-          internalServerUrl&&!internalServerUrl?.isRunning&&'cache'
-        );
-      }
+      queryCallbacks?.isGenerating()
+      recycleServer(
+        clusterUrl, 
+        token,
+        requestMode,
+        connectionParams,
+        emitterId,
+        clientId,
+        query,
+        ws,
+        queryCallbacks,
+        internalServerUrl&&!internalServerUrl?.isRunning&&'cache'
+      );
     }
-  } catch (error) {
-    console.log('gqlServerRouter', error)
-
   }
 }
 
 const recycleServer = (
   replacementClusterUrl, 
   token,
-
   reqType,
   connectionParams,
   emitterId,
@@ -413,7 +370,9 @@ const recycleServer = (
 ) => {
   // get least used server
   const { serverData:leastUsedInternalServer, timeDiff_minutes }= serverCache.getMinUsedServer();
-  console.log('RECYCLE', leastUsedInternalServer, timeDiff_minutes)
+
+  printColor('yellow', 'RECYCLE', leastUsedInternalServer, timeDiff_minutes);
+
   if(leastUsedInternalServer){
     const { threadId, clusterUrl, port: freePort }= leastUsedInternalServer;
 
@@ -441,7 +400,6 @@ const recycleServer = (
     );
 
     const genFromCache= genType==='cache' ? true : false;
-
     genFromCache&&genServerFromCacheComm(freePort, replacementClusterUrl);
     !genFromCache&&genServerComm(freePort, replacementClusterUrl, token);
   }
@@ -481,7 +439,6 @@ const genServerHandler = async(
   queryCallback,
   genType
 ) => {
-
     addConnectionToConnectQueue(
       reqType,
       clusterUrl,
@@ -505,8 +462,7 @@ const genServerHandler = async(
     genFromCache&&genServerFromCacheComm(freePort, clusterUrl);
     !genFromCache&&genServerComm(freePort, clusterUrl, token);
 
-    queryCallback?.isGenerating()
-
+    queryCallback?.isGenerating();
 }
 
 // create job
@@ -551,7 +507,6 @@ const onFetchWorkerJob = (threadId) => {
     }
 }
 
-
 // WAIT FOR WORKER TO CONFIRM SERVER BUILD
 const addConnectionToConnectQueue = (
   reqType,
@@ -563,13 +518,12 @@ const addConnectionToConnectQueue = (
   queryCallbacks,
   ws
 ) => {
-
   // Store http req callback to be called when server gen starts
   if(reqType == requestTypeEnum.query){
     const connectQuery = new ConnectQueryArg(queryCallbacks, connectionParams, query, requestTypeEnum.query)
     connectClientQueue[clusterUrl] ? 
       connectClientQueue[clusterUrl].push(connectQuery) :
-      connectClientQueue[clusterUrl]= [connectQuery]
+      connectClientQueue[clusterUrl]= [connectQuery];
   }
   
   // store subscription data to be transfered
@@ -583,37 +537,32 @@ const addConnectionToConnectQueue = (
       connectionParams,
       ws,
       reqType
-    )
+    );
 
     connectClientQueue[clusterUrl] ? 
       connectClientQueue[clusterUrl].push(newConnectSub) :
-      connectClientQueue[clusterUrl]= [newConnectSub]
+      connectClientQueue[clusterUrl]= [newConnectSub];
   }
-  ws&&sendServerGenerationMessage(ws, 'start-generate')
+  ws&&sendServerGenerationMessage(ws, 'start-generate');
 }
 
 const onServerGenerateStarted = (workerResponse) => {
-  const connectionData = connectClientQueue[clusterUrl];
-  if(connectionData){
-    connectClientQueue[clusterUrl].status= workerResponse.process_status;
-  }
-
-  console.log('onServerGenerateStarted', connectClientQueue)
+  // ## can add granular logic for when
+  // ## worker is running server generation
 }
 
 
 // SENDS SERVER GENERATION STATUS MESSAGES TO AFFECTED CLIENTS
 const sendServerGenerationMessage = (focusedWs, messageType) => {
-
   if(focusedWs?.readyState !== 1)
     return;
 
   messageType === 'start-generate'&&focusedWs?.send(
     JSON.stringify({ status: 'generating' })
-  )
+  );
   messageType === 'end-generate'&&focusedWs?.send(
     JSON.stringify({ status: 'exists' })
-  )
+  );
 }
 
 // SETS UP SUBSCRIPTION / EMITTER FOR CLIENT
@@ -637,16 +586,14 @@ const setupSub = (gqlServerUrl, emitterId, clientId, query, connectionParams, ws
       if(ws?.readyState !== 1)
         return;
 
-      ws?.send(JSON.stringify(data))
+      ws?.send(JSON.stringify(data));
     });
   } catch (error) {
-    console.log('Emit Error', error)
+    console.log('Emit Error', error);
   }
-
 }
 
 const onServerGenerated = (clusterUrl, serverUrl, threadId, port) => {
-
   // cache server 
   serverCache.cacheServer(
     threadId,
@@ -672,34 +619,32 @@ const onServerGenerated = (clusterUrl, serverUrl, threadId, port) => {
 
   // reset worker status
   changeWorkerStatus(threadId, workerStatusEnum.idle);
-
 }
 
 const onPostPreLoad = (threadId, clusterUrl, commStatus) => {
-
   preLoadCurrent++;
   commStatus&&preLoadSuccess++;
   !commStatus&&preLoadFailed++;
 
   changeWorkerStatus(threadId, workerStatusEnum.idle);
   commStatus&&pairNewServerToWorker(threadId, clusterUrl, null);
-  const preLoadStatus_actual= Math.ceil((preLoadCurrent / preLoadCount)*100) ;
-  const preLoadStatus= Math.ceil(((preLoadCurrent / preLoadCount)*100)/ 5) ;
+  const preLoadStatus_actual= Math.ceil((preLoadCurrent / preLoadCount)*100);
+  const preLoadStatus= Math.ceil(((preLoadCurrent / preLoadCount)*100)/ 5);
   
-  const dots = ".".repeat(preLoadStatus)
-  const left = 20 - preLoadStatus
-  const empty = " ".repeat(left)
+  const dots = ".".repeat(preLoadStatus);
+  const left = 20 - preLoadStatus;
+  const empty = " ".repeat(left);
 
-  console.log('\x1b[36m%s\x1b[0m', `\r[${dots}${empty}] ${preLoadStatus_actual}%`)
+  printColor('yellow', `\r[${dots}${empty}]  ${preLoadStatus_actual}%`);
   if(preLoadCurrent === preLoadCount){
-    console.log("\x1b[32m%s\x1b[0m", `Pre loading complete! :: success ${preLoadSuccess} :: failed ${preLoadFailed}`);
+    printColor('green', `Pre loading complete! :: success ${preLoadSuccess} :: failed ${preLoadFailed}`);
     isPreloaded=true;
   }
 }
 
 const removeClusterUrlFromServerMap = (threadId, clusterUrl) => {
   let mapRef= worker_servers_map[threadId];
-  worker_servers_map[threadId] = mapRef.filter((clstrUrl) =>  clstrUrl !== clusterUrl)
+  worker_servers_map[threadId] = mapRef.filter((clstrUrl) =>  clstrUrl !== clusterUrl);
 }
 
 const onInternalServerDestroyed = (clusterUrl, threadId) => {
@@ -708,7 +653,7 @@ const onInternalServerDestroyed = (clusterUrl, threadId) => {
   serverCache.onServerDestroy(clusterUrl);
 
   // update worker server map
-  removeClusterUrlFromServerMap(threadId, clusterUrl)
+  removeClusterUrlFromServerMap(threadId, clusterUrl);
 
   // reset worker status
   changeWorkerStatus(threadId, workerStatusEnum.idle);
@@ -732,12 +677,12 @@ const connectWaitingSockets = (clusterUrl, serverUrl) => {
         queryCallbacks.queryServer(serverUrl, connectionParams, query)
       }
     }
-    delete connectClientQueue[clusterUrl]
+    delete connectClientQueue[clusterUrl];
   }
 }
 
 const messageWorker = (_worker, command, commandArgs) => {
-  _worker.postMessage({command, commandArgs})
+  _worker.postMessage({command, commandArgs});
 }
 
 const changeWorkerStatus = (threadId, status) => {
@@ -745,7 +690,6 @@ const changeWorkerStatus = (threadId, status) => {
 }
 
 const pairNewServerToWorker = (threadId, clusterUrl, serverUrl) => {
-
   !worker_servers_map[threadId]?.includes(clusterUrl)&&
     (worker_servers_map[threadId]= [...worker_servers_map[threadId]||[], clusterUrl]);
 
@@ -756,11 +700,9 @@ const pairNewServerToWorker = (threadId, clusterUrl, serverUrl) => {
 }
 
 const onWorkerStarted = async() => {
-
   // ## Better solution in future
   const getBasicToken = async() => {
     try {
-      console.log(`getBasicToken :: ${process.env.CONDUCKTOR_K8S_ONBOARD_USER}`)
       if(process.env.CONDUCKTOR_K8S_ONBOARD_USER&&process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD){
         const basicAuthFormat= `${process.env.CONDUCKTOR_K8S_ONBOARD_USER}:${process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD}`;
         const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
@@ -789,8 +731,7 @@ const onWorkerStarted = async() => {
     }
   }
 
-
-  console.log('Worker has started');
+  printColor('blue', 'Worker has started')
   serverStart();
 
   //check and preload
@@ -810,7 +751,6 @@ const onWorkerStarted = async() => {
       }
     }
   }else{
-    console.log('no config')
     isPreloaded=true;
   }
 }
@@ -829,7 +769,6 @@ const createWorker = () => {
           const clusterUrl= processDetails;
           // handle waiting connections
           // and update cache
-          console.log('return generated')
           onServerGenerated(
             processDetails.clusterUrl, 
             processDetails.serverUrl,
@@ -839,7 +778,6 @@ const createWorker = () => {
         }
         else if(process === workerProcesseesEnum.destroy_server){
           const { clusterUrl, success }= processDetails;
-          console.log('return destroyed')
           onInternalServerDestroyed(clusterUrl, worker.threadId)
         }
         else if(process === workerProcesseesEnum.init){
@@ -855,8 +793,7 @@ const createWorker = () => {
       }
       else if(process_status === workerProcessStatusEnum.running){
         if(
-          process === workerProcesseesEnum.gen_server&&
-          pre_connectClientQueue?.[processDetails]
+          process === workerProcesseesEnum.gen_server
         ){
           // set status on cluster object to "gen_server"
           // ## we could also message all waiting clients about this?
@@ -884,11 +821,11 @@ const createWorker = () => {
       [threadId]: []
     }
 
-    WORKER_MAP[threadId]= new WorkerObj(workerStatusEnum.idle, worker)
+    WORKER_MAP[threadId]= new WorkerObj(workerStatusEnum.idle, worker);
 
     return worker;
   } catch (error) {
-    console.log('worker error', error)
+    printColor('red', `Worker error :: ${error}`);
   }
 };
 
@@ -900,6 +837,7 @@ app.get('/health', (req, res) => {
   }
 });
 
+// called after worker init completes
 const serverStart = () => {
   let PORT = `${process.env.SERVER_PORT}`;
   if (!process.env.SERVER_PORT) {
@@ -907,17 +845,15 @@ const serverStart = () => {
   }
   wsServer.on('request', app);
   wsServer.listen(PORT, () => {
-    console.log("\x1b[32m%s\x1b[0m", `Server istening on port ${wsServer.address().port} 🚀🚀🚀`)
+    printColor('green', `Server istening on port ${wsServer.address().port} 🚀🚀🚀`);
   }) 
 }
 
 // INIT STARTUP
 const initilize = async() => {
   // badass console logo :D
-  console.log("\x1b[35m%s\x1b[0m", ` _______ _       _     _ _     _ ______  _______ \r\n(_______|_)     (_)   | (_)   (_|____  \\(_______)\r\n _    _  _       _____| |_     _ ____)  )_____   \r\n| |  | || |     |  _   _) |   | |  __  (|  ___)  \r\n| |__| || |_____| |  \\ \\| |___| | |__)  ) |_____ \r\n \\______)_______)_|   \\_)\\_____\/|______\/|_______)`)
+  printColor('magenta', ` _______ _       _     _ _     _ ______  _______ \r\n(_______|_)     (_)   | (_)   (_|____  \\(_______)\r\n _    _  _       _____| |_     _ ____)  )_____   \r\n| |  | || |     |  _   _) |   | |  __  (|  ___)  \r\n| |__| || |_____| |  \\ \\| |___| | |__)  ) |_____ \r\n \\______)_______)_|   \\_)\\_____\/|______\/|_______)`)
   await createWorker();
 };
 
-
 initilize();
-

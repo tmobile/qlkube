@@ -9,10 +9,13 @@ const WebSocketServer  = require('ws').Server; // yarn add ws
 const getOpenApiSpec = require('./oas');
 const { logger } = require('./log');
 const { PubSub } = require('apollo-server-express');
-const { printColor } = require('./utils/consoleColorLogger')
-const { getSchema } = require('./utils/process-oas')
-const { workerProcesseesEnum, workerCommandEnum, workerProcessStatusEnum } = require('./enum/workerEnum')
-
+const { printColor } = require('./utils/consoleColorLogger');
+const { getSchema } = require('./utils/process-oas');
+const { 
+  workerProcesseesEnum, 
+  workerCommandEnum, 
+  workerProcessStatusEnum 
+} = require('./enum/workerEnum');
 
 let internalServerReference= {};
 let clusterUrl_ServerUrl_map= {};
@@ -26,12 +29,10 @@ const generateGqlServer2 = async(port, schema) => {
       }
     };
   }else{
-
     let wsserver = await new WebSocketServer({
       port: port,
       path: '/gql'
     });
-
     await useServer({ 
       schema: schema, 
       context: ({req, connectionParams }) => {
@@ -42,7 +43,6 @@ const generateGqlServer2 = async(port, schema) => {
           emitterId
         }= connectionParams;
         const pubsub = new PubSub();
-
         return {
           authorization,
           clusterUrl,
@@ -91,7 +91,6 @@ const generateClusterSchema_Replacer = async(kubeApiUrl, schemaToken) => {
 //     const oas = deleteWatchParameters(oasWatchable);
 
 //     if(oas?.code || Object.keys(oas)?.length <2){
-//       console.log('error...')
 //       return {
 //         error: {
 //           errorPayload: `error retrieving schema`
@@ -100,7 +99,6 @@ const generateClusterSchema_Replacer = async(kubeApiUrl, schemaToken) => {
 //     } 
 //     // const check = await SwaggerClient.resolve({ spec: oasRaw });
 
-//     // console.log('Create Schema', kubeApiUrl)
 //     const schema = await createSchema(
 //       oas,
 //       kubeApiUrl,
@@ -126,27 +124,26 @@ const destroyInternalServer = async(clusterUrl) => {
     const res = await serverObject.close(() => {
       return true
     });
-
     return res;
   } catch (error) {
     console.log('Server destroy error', error)
   }
-
 }
 
 const onGenerateCommand = async(port, kubeApiUrl, schemaToken) => {
   if(port&&kubeApiUrl&&schemaToken){
-    // tell main server is generatinh
+    // tell main server is generating
     parentPort.postMessage({
       process_status: workerProcessStatusEnum.running,
       process: workerProcesseesEnum.gen_server,
       processDetails: kubeApiUrl
     });
+    // ## Depreciated
     // const schema= await generateClusterSchema(kubeApiUrl, schemaToken)
     const schema= await generateClusterSchema_Replacer(kubeApiUrl, schemaToken)
     if(schema){
       const serverDetails = await generateGqlServer2(port, schema);
-      printColor('blue', `GEN SERVER COMPLETE  :: ${kubeApiUrl}`)
+      printColor('blue', `GEN SERVER COMPLETE :: ${kubeApiUrl}`)
       const { serverUrl }= serverDetails
       clusterUrl_ServerUrl_map[kubeApiUrl]= serverUrl;
       // tell main generation is complete
@@ -179,17 +176,16 @@ const commandHandler = async (message) => {
   switch(command){
     case workerCommandEnum.destroyInternalServer : {
       onDestroyInternalSrvCommand(kubeApiUrl);
-      break
+      break;
     }
     case workerCommandEnum.generate : {
       onGenerateCommand(port, kubeApiUrl, schemaToken);
-      break
+      break;
     }
     case workerCommandEnum.generateCached : {
       if(cachedGqlSchemas[kubeApiUrl]&&port){
         const cachedSchema= cachedGqlSchemas[kubeApiUrl];
         const serverDetails = await generateGqlServer2(port, cachedSchema);
-        console.log("\x1b[34m%s\x1b[0m", `GEN CACHE COMPLETE :: ${kubeApiUrl}`);
         const { serverUrl }= serverDetails
         clusterUrl_ServerUrl_map[kubeApiUrl]= serverUrl;
         parentPort.postMessage({
@@ -208,12 +204,11 @@ const commandHandler = async (message) => {
           }
         }
       }
-      break
+      break;
     }
     case workerCommandEnum.preLoad : {
       const schema= await generateClusterSchema(kubeApiUrl, schemaToken);
       if(schema?.error){
-        console.log('Preload Failed -- ', kubeApiUrl)
         parentPort.postMessage({
           process_status: workerProcessStatusEnum.failed,
           process: workerProcesseesEnum.preLoad,
@@ -231,13 +226,12 @@ const commandHandler = async (message) => {
           clusterUrl: kubeApiUrl,
         }
       });
-      break
+      break;
     }
     default: {
       logger.error('cmon meng')
     }
   }
-
 }
 
 const checkServerConnections = () => {
@@ -246,19 +240,15 @@ const checkServerConnections = () => {
     internalServerReference[serverUrl].clients?.forEach((socket) => {
       socketCount++;
     });
-    // if(socketCount > 0){
-    //   serverCache.refreshServerUsage(clusterUrl)
-    // }
-    console.log('SERVER---', serverUrl, socketCount);
+    console.log('SERVER--- ', serverUrl, socketCount);
   }
 }
+
 if (isMainThread) {} 
 else {
-
   parentPort.on("message", async (message) => {
     commandHandler(message);
   });
-
   const { command: initCommand }= workerData;
   if(initCommand === workerCommandEnum.init){
     parentPort.postMessage({
@@ -267,10 +257,8 @@ else {
       processDetails: {}
     });
     setInterval(() => {
-
       console.log('WORKER_MEM_USAGE', process.memoryUsage().heapTotal/1000000)
       checkServerConnections()
     }, 25000) 
-
   }
 }
