@@ -349,39 +349,19 @@ const processOperations = (specPaths, gqlObjectMap) => {
     }
 }
 
-const dereferenceOpenApiSpec = async(rawSpec) => {
-    const oasWatchable = deleteDeprecatedWatchPaths(rawSpec);
-    const oas = deleteWatchParameters(oasWatchable);
-    const resolvedSchema = await SwaggerClient.resolve({ spec: oas });
-    return resolvedSchema;
-}
-
-const normalizeData = (derefSpec_spec) => {
-    if(derefSpec_spec){
-        const oasWatchable = deleteDeprecatedWatchPaths(derefSpec_spec);
-        const oas = deleteWatchParameters(oasWatchable);
-        const subs = getWatchables(oasWatchable);
-        return {
-            oas,
-            subs,
-        }
-    }
-}
 
 const getSchema = async(
-    rawSpec
+    derefSpec,
+    subs
 ) => {
 
     try {
-        if(!rawSpec)  throw new Error('invalid raw oas');
-        printColor('yellow', 'De-referenceing api Specification...');
+        if(!derefSpec)  throw new Error('invalid dereferenced oas');
 
-        const { subs, oas } = normalizeData(rawSpec);
-        const derefSpec = await dereferenceOpenApiSpec(oas);
         const specDefs= derefSpec?.spec?.definitions;
         const specPaths= derefSpec?.spec?.paths;
 
-        if(!(derefSpec&&subs&&specDefs&&specPaths)) throw new Error('error dereferencing api spec');
+        if(!(derefSpec&&subs&&specDefs&&specPaths)) throw new Error('schema creation, invalid parameters');
         printColor('yellow', 'Schema Generate Started...')
     
         const gqlObjectMap = processDefinitions(specDefs);
@@ -411,7 +391,7 @@ const getSchema = async(
             subs.mappedNamespacedPaths,
             preSubList
         )
-        printColor('green', 'Schema Generate Complete :)')
+        printColor('green', 'Schema Generation Complete')
 
         return schema;
     } catch (error) {

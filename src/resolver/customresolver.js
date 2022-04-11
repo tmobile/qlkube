@@ -14,7 +14,7 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
         let apiUrl = context.clusterUrl + k8sApiUrlPath;
         apiUrl = apiUrl.replace('{namespace}', args['namespace']);
         apiUrl = apiUrl.replace('{name}', args['name']);
-        logger.debug("getK8SCustomResolver : processing url " + apiUrl);
+        // logger.debug("getK8SCustomResolver : processing url " + apiUrl);
 
         let options;
         if(httpMethod === 'put'){

@@ -38,6 +38,8 @@ const connectSub = (
               await client.subscribe(
                 {
                   query: query,
+                  variables: connectionParams?.queryVariables
+
                 },
                 {
                   next: onNext,

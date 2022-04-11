@@ -1,5 +1,5 @@
 const gqlPortRange={
-    max:1130,
+    max:1160,
     min:1115
 }
 
@@ -8,13 +8,13 @@ function ServerObject(
   lastUsed,
   clusterUrl,
   port,
-  threadId
+  server
 ){
   this.gqlServerUrl= gqlServerUrl, 
   this.lastUsed= lastUsed
   this.clusterUrl= clusterUrl
   this.port= port
-  this.threadId= threadId
+  this.server= server
 }
 
 const serverCache = module.exports ={
@@ -22,13 +22,13 @@ const serverCache = module.exports ={
     usedPorts:{},
     pendingPorts:{}, // port -> clusterurl :: servers are generating using these ports
     servers:{}, // clusterUrl -> server data, ie threadid, serverUrl etc..
-    cacheServer: function(threadId, clusterUrl, serverUrl, port) {
+    cacheServer: function(server, clusterUrl, serverUrl, port) {
       const newServer= new ServerObject(
         serverUrl,
         new Date().toUTCString(),
         clusterUrl,
         port,
-        threadId
+        server
       )
       this.servers[clusterUrl]= newServer;
       this.movePortUsed(port)
@@ -59,6 +59,12 @@ const serverCache = module.exports ={
     moveUsedPortToQueue: function(portNo) {
       if(this.usedPorts[portNo]){
         delete this.usedPorts[portNo];
+        this.portQueue.push(portNo);
+      }
+    },
+    movePendingPortToQueue: function(portNo) {
+      if(this.pendingPorts[portNo]){
+        delete this.pendingPorts[portNo];
         this.portQueue.push(portNo);
       }
     },
