@@ -380,7 +380,7 @@ function getResolver({ operation, argsFromLink = {}, payloadName, data, baseUrl,
             }
             else {
                 // Payload is not an object
-                rawPayload = args[sanePayloadName];
+                rawPayload = args[sanePayloadName] || args[payloadName];
             }
             options.body = rawPayload;
             resolveData.usedPayload = rawPayload;

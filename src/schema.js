@@ -5,6 +5,7 @@ const { createGraphQLSchema } = require('../openapi-to-graphql');
 const { logger } = require('./log');
 const { getK8SCustomResolver } = require('./resolver/customresolver');
 const watch = require('./watch');
+const utilities = require('./utilities');
 
 const customSubArgs = {
   'PodLogs': {
@@ -23,6 +24,7 @@ const customBaseSchema = {
     }
   })
 }
+
 const hasOuterWatch = (path) => {
   // check outer parameters of path
   if (path.parameters) {
@@ -90,10 +92,13 @@ exports.getWatchables = (oas) => {
     ) {
       const currentPathKeys = Object.keys(path);
       const pathKind =
-        path[currentPathKeys[0]]['x-kubernetes-group-version-kind'].kind;
+        path[currentPathKeys[0]]['x-kubernetes-group-version-kind']?.kind;
       const hasNamespaceUrl = pathName.includes('{namespace}');
+      if(!pathKind){
+        continue;
+      }
       if (!hasNamespaceUrl) {
-        if (mappedWatchPath[pathKind]) {
+        if (mappedWatchPath?.[pathKind]) {
           const tempPaths = [...mappedWatchPath[pathKind], pathName];
           mappedWatchPath[pathKind.toUpperCase()] = tempPaths;
         } else {
@@ -119,6 +124,7 @@ exports.getWatchables = (oas) => {
  */
 exports.deleteWatchParameters = (oas) => {
   const newOAS = JSON.parse(JSON.stringify(oas)); // Javascript is wierd, this is deep copy.
+  // const newOAS = JSON.parse(JSON.stringify(oas, getCircularReplacer())); // Javascript is wierd, this is deep copy.
   for (const pathName in newOAS.paths) {
     const path = newOAS.paths[pathName];
     if (hasOuterWatch(path)) {
@@ -146,8 +152,8 @@ exports.deleteDeprecatedWatchPaths = (oas) => {
   return newOAS;
 };
 
-async function oasToGraphQlSchema(oas, kubeApiUrl) {
-  const { schema } = await createGraphQLSchema(oas, {
+async function oasToGraphQlSchema(oas, kubeApiUrl, finalOas) {
+  const { schema, data } = await createGraphQLSchema(oas, {
     baseUrl: kubeApiUrl,
     viewer: false,
     customResolvers: {
@@ -177,8 +183,8 @@ async function oasToGraphQlSchema(oas, kubeApiUrl) {
       'Content-Type': method === 'patch' ? 'application/merge-patch+json' : 'application/json',
       'Accept': 'application/json, */*'
     }),
-  });
-  return schema;
+  }, finalOas);
+  return {schema, data};
 }
 
 function createSubscriptionSchema(
@@ -227,8 +233,9 @@ function createSubscriptionSchema(
     return asyncIterator;
   };
 
+  // function newSubscription(parent, args, context) {
   function newSubscription(parent, args, context) {
-    const { namespace = null, name = null, container = null } = args;
+      const { namespace = null, name = null, container = null } = args;
     const pathIncludesRawNamespace = k8Data.k8sUrl.includes('{namespace}');
     let pathUrl = k8Data.k8sUrl;
 
@@ -241,12 +248,12 @@ function createSubscriptionSchema(
       pathUrl = `/api/v1/namespaces/${namespace}/pods/${name}/log?tailLines=10&follow=true&container=${container}`;
       args['secondaryUrl'] = `/api/v1/namespaces/${namespace}/pods/${name}/log?tailLines=0&follow=true&container=${container}`
     } else if (namespace && pathIncludesRawNamespace) {
-      logger.debug('Namespace Provided!', namespace);
+      // logger.debug('Namespace Provided!', namespace);
       const focusedPath = k8Data.k8sUrl.split('/') || [];
       const injectedUrl = injectUrl(focusedPath, namespace);
       pathUrl = injectedUrl;
     } else if (!namespace && pathIncludesRawNamespace) {
-      logger.debug('No namespace provided!');
+      // logger.debug('No namespace provided!');
       pathUrl =
         watchableNonNamespacePaths[kind.toUpperCase()] &&
           watchableNonNamespacePaths[kind.toUpperCase()][0]
@@ -257,7 +264,7 @@ function createSubscriptionSchema(
       !pathIncludesRawNamespace &&
       mappedNamespacedPaths[kind.toUpperCase()][0]
     ) {
-      logger.debug('Namespace not provided and not not requested!');
+      // logger.debug('Namespace not provided and not not requested!');
       const focusedPath =
         mappedNamespacedPaths[kind.toUpperCase()][0].split('/');
       const injectedUrl = injectUrl(focusedPath, namespace);
@@ -267,12 +274,15 @@ function createSubscriptionSchema(
     const clientId = context.clientId;
     const subId = context.subId;
     const subArgs = args;
+    const emitterId = context.emitterId;
+    const pubsub = context.pubsub;
 
     watch.setupWatch(
       k8Data,
       context.pubsub,
+      // emitterId,
       context.authorization,
-      context.clusterURL,
+      context.clusterUrl,
       namespace,
       pathUrl,
       subId,
@@ -315,14 +325,26 @@ function createSubscriptionSchema(
   return schema;
 }
 
+// ## Depreciated
 exports.createSchema = async (
   oas,
   kubeApiUrl,
-  subscriptions,
   watchableNonNamespacePaths,
-  mappedNamespacedPaths
+  mappedNamespacedPaths,
+  finalOas
 ) => {
-  const baseSchema = await oasToGraphQlSchema(oas, kubeApiUrl);
+
+  //.paths details about each endpoint
+  //.definitions no clue but looks important
+
+  const {schema:baseSchema, data} = await oasToGraphQlSchema(oas, kubeApiUrl, finalOas);
+  const { graphQlSchemaMap } = utilities.translateOpenAPIToGraphQLREV(data);// takes a while
+  const k8PathKeys = Object.keys(oas.paths);
+  const subscriptions = utilities.mapK8ApiPaths(
+    oas,
+    k8PathKeys,
+    graphQlSchemaMap
+  );
   const schemas = [baseSchema];
   const pathMap = {};
 
@@ -330,6 +352,43 @@ exports.createSchema = async (
     let ObjectEventName;
     if (element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log') {
       element.k8sType = `${element.k8sType}Logs`
+      ObjectEventName = `${element.k8sType}Event`;
+    } else {
+      ObjectEventName = `${element.k8sType}Event`;
+    }
+    const includesNamespace = element.k8sUrl.includes('{namespace}');
+    const includesName = element.k8sUrl.includes('{name}');
+
+    if (includesName && includesNamespace && !pathMap[ObjectEventName]) {
+      pathMap[ObjectEventName] = true;
+      const schema = createSubscriptionSchema(
+        baseSchema,
+        element.schemaType,
+        element.k8sType,
+        element.k8sUrl,
+        watchableNonNamespacePaths,
+        mappedNamespacedPaths
+      );
+      schemas.push(schema);
+    }
+  });
+  return mergeSchemas({ schemas });
+};
+
+exports.createSchema_Trial = async (
+  baseSchema,
+  watchableNonNamespacePaths,
+  mappedNamespacedPaths,
+  subscriptions
+) => {
+
+  const schemas = [baseSchema];
+  const pathMap = {};
+
+  subscriptions.forEach((element) => {
+    let ObjectEventName;
+    if (element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log') {
+      element.k8sType = `${element.k8sType}Logs`;
       ObjectEventName = `${element.k8sType}Event`;
     } else {
       ObjectEventName = `${element.k8sType}Event`;

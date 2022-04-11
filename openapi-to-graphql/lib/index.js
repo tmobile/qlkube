@@ -78,6 +78,7 @@ function createGraphQLSchema(spec, options) {
             numMutationsCreated: 0,
             numSubscriptionsCreated: 0
         };
+        
         if (Array.isArray(spec)) {
             // Convert all non-OAS 3 into OAS 3
             Promise.all(spec.map(ele => {
@@ -398,7 +399,7 @@ provideErrorExtensions, equivalentToMessages }) {
         }
     });
     const schema = new graphql_2.GraphQLSchema(schemaConfig);
-    return { schema, report: options.report };
+    return { schema, report: options.report, data };
 }
 /**
  * Creates the field object for the given operation.
