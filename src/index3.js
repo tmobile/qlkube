@@ -47,8 +47,6 @@ let rougeSocketMap={};
 let currentGeneratingServers= [];
 let connectClientQueue= {};
 
-// let worker_servers_map= {};
-
 let clusterUrl_serverUrl_map= {};
 let internalServerReference= {};
 let cachedSchemas = {};
@@ -68,7 +66,7 @@ let isPreloaded= false;
 let WORKER_MAP= {};
 
 let isServerStart= false;
-let WORKER_COUNT= 6;
+let WORKER_COUNT= 4;
 
 process.on('unhandledRejection', (reason, p) => {
   console.log('Unhandled Rejection at: Promise')
@@ -81,10 +79,9 @@ const checkServerConnections = () => {
     internalServerReference[serverUrl].clients?.forEach((socket) => {
       socketCount++;
     });
-    console.log('SERVER--- ', serverUrl, socketCount);
+    console.log('SERVER ::', serverUrl, socketCount);
   }
   console.log(' ');
-
 }
 
 setInterval(() => {
@@ -364,9 +361,6 @@ const gqlServerRouter = (
         ws
       );
       queryCallbacks?.isGenerating();
-      // const newJob = new WorkerJob(comm, commArgs, toThread);
-      // WORKER_JOB_QUEUE.push(newJob);
-
     }
 
     // NOT GENERATING :: FREE PORT
@@ -556,8 +550,6 @@ const onFetchWorkerJob = (threadId) => {
       const job= threadSpecificJob ? threadSpecificJob : nextJob;
       const { command, commandArgs }= job;
       changeWorkerStatus(threadId, workerStatusEnum.busy);
-      console.log('Messaging worker', threadId)
-
       messageWorker(WORKER_MAP[threadId].worker, command, commandArgs);
     }
 }
@@ -575,7 +567,6 @@ const addConnectionToConnectQueue = (
 ) => {
   // Store http req callback to be called when server gen starts
 
-  
   // store subscription data to be transfered
   // to connectQueue when server gen starts
   if(
@@ -653,34 +644,6 @@ const setupSub = (gqlServerUrl, emitterId, clientId, query, connectionParams, ws
   }
 }
 
-// SETS UP SUBSCRIPTION / EMITTER FOR CLIENT
-const setupMonoSub = async(gqlServerUrl, emitterId, clientId, query, connectionParams, ws) => {
-  const subId= connectionParams?.clientSubId;
-  if(rougeSocketMap[subId]){
-    delete rougeSocketMap[subId];
-    return;
-  }
-  try {
-    const emitter = await connectMonoSub(
-      gqlServerUrl, 
-      emitterId, 
-      clientId, 
-      query, 
-      JSON.parse(connectionParams),
-      pairSubToClient,
-      updateServerUsage
-    );
-    emitter.on(emitterId, data => {
-      if(ws?.readyState !== 1)
-        return;
-
-      ws?.send(JSON.stringify(data));
-    });
-  } catch (error) {
-    console.log('Emit Error', error);
-  }
-}
-
 const onSchemaGenerated = async(clusterUrl, threadId, port, executableSchema) => {
   //create gql server
   const {
@@ -732,11 +695,7 @@ const onSchemaGeneratedFailed = async(clusterUrl, threadId, port) => {
   });
   currentGeneratingServers= newCurrentGenCluster;
 
-  // pair internal server with worker
-  // pairNewServerToWorker(threadId, clusterUrl, serverUrl);
-
-  // ## connect waiting sockets
-  // connectWaitingSockets(clusterUrl, serverUrl, 'failed');
+  // ## connect waiting sockets :: or message waiting sockets?
 
   //remove connectClientQueue data
   connectClientQueue?.[clusterUrl]&& delete connectClientQueue[clusterUrl];
@@ -818,7 +777,6 @@ const messageWorker = (_worker, command, commandArgs) => {
 const changeWorkerStatus = (threadId, status) => {
   WORKER_MAP[threadId].status= status;
 }
-
 
 const pairNewServerToWorker = (threadId, clusterUrl, serverUrl) => {
   !worker_servers_map[threadId]?.includes(clusterUrl)&&
@@ -934,10 +892,8 @@ const createWorker = () => {
       else if(process_status === workerProcessStatusEnum.failed){
         if(process === workerProcesseesEnum.gen_schema){
           const { clusterUrl, port } = processDetails;
-          console.log('Failed server gen', port)
           onSchemaGeneratedFailed(clusterUrl, worker.threadId, port);
         }
-        console.log('fetch new job!')
         onFetchWorkerJob(worker.threadId);
       }
     });
@@ -950,10 +906,6 @@ const createWorker = () => {
     });
 
     const threadId= worker.threadId;
-    // worker_servers_map={
-    //   ...worker_servers_map,
-    //   [threadId]: []
-    // }
 
     WORKER_MAP[threadId]= new WorkerObj(workerStatusEnum.idle, worker);
 

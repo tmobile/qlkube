@@ -24,7 +24,6 @@ const onGenerateCommand = async(port, kubeApiUrl, schemaToken) => {
     });
     // ## Depreciated
     const { derefSpec, subs, error=null }= await generateDereferencedOas(kubeApiUrl, schemaToken);
-    console.log('error', error)
     if(!error){
       // tell main generation is complete
       parentPort.postMessage({
