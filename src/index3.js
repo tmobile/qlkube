@@ -85,8 +85,10 @@ const checkServerConnections = () => {
 }
 
 setInterval(() => {
+  console.log('currentGeneratingServers', currentGeneratingServers)
+  console.log('connectClientQueue', Object.keys(connectClientQueue))
   checkServerConnections();
-}, 10000)
+}, 5000)
 
 let hmm = {}
 // GQL QUERIES
@@ -497,7 +499,14 @@ const genServerHandler = async(
     );
 
     //add cluster to currently gen
-    currentGeneratingServers.push(clusterUrl);
+    if(
+      !currentGeneratingServers.includes(clusterUrl)&&
+      !clusterUrl_serverUrl_map[clusterUrl]
+      ){
+      currentGeneratingServers.push(clusterUrl);
+
+    }
+
     //move port to pending
     serverCache.movePortQueueToPending(freePort, clusterUrl);
 
@@ -528,6 +537,7 @@ const onAddWorkerJob = (comm, commArgs, toThread) => {
 // if no thread specific job
 // get first job that dosent have allocatedThreadId
 const onFetchWorkerJob = (threadId) => {
+  console.log('FINDING JOB',threadId, WORKER_MAP[threadId].status)
 
   if(WORKER_MAP[threadId].status !== workerStatusEnum.idle)
     return;
@@ -545,6 +555,7 @@ const onFetchWorkerJob = (threadId) => {
       }
     }
 
+    // console.log('nextJob', nextJob)
     if(threadSpecificJob||nextJob){
       WORKER_JOB_QUEUE.splice(jobIndex, 1);
       const job= threadSpecificJob ? threadSpecificJob : nextJob;
@@ -864,7 +875,7 @@ const createWorker = () => {
             processDetails?.dereferencedSpec,
             processDetails?.subscriptionData,
           );
-          onSchemaGenerated(
+          await onSchemaGenerated(
             processDetails.clusterUrl,
             worker.threadId,
             processDetails.port,
@@ -880,6 +891,10 @@ const createWorker = () => {
           onPostPreLoad(worker.threadId, processDetails.clusterUrl, true);
         }
         // get next worker job if any are in pool
+        console.log('WORKER DONE', worker.threadId)
+
+        console.log('looking for job...', WORKER_JOB_QUEUE.length)
+
         onFetchWorkerJob(worker.threadId);
       }
       else if(process_status === workerProcessStatusEnum.running){
