@@ -24,6 +24,11 @@ const {
   ConnectSubArg, 
   ConnectQueryArg 
 } = require('./models/argumentTypes');
+
+const {
+  introspectionFromSchema,
+} = require('graphql');
+
 const { connectSub, connectQuery, connectMonoSub } = require('./utils/internalServerConnect');
 const { generateServer } = require('./utils/generateGqlServer')
 const { requestTypeEnum } = require('./enum/requestEnum');
@@ -31,7 +36,9 @@ const { printColor } = require('./utils/consoleColorLogger');
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 const inCluster = process.env.IN_CLUSTER !== 'false';
+
 logger.info({ inCluster }, 'cluster mode configured');
+
 const rawConfig= nodeFs.readFileSync(path.join(__dirname, './config/config.json'));
 const config= JSON.parse(rawConfig);
 
@@ -68,6 +75,7 @@ let WORKER_MAP= {};
 let isServerStart= false;
 let WORKER_COUNT= 4;
 
+
 process.on('unhandledRejection', (reason, p) => {
   console.log('Unhandled Rejection at: Promise')
   logger.debug('This is probably from a closed websocket');
@@ -88,7 +96,29 @@ setInterval(() => {
   checkServerConnections();
 }, 15000)
 
-let hmm = {}
+
+app.use(express.static(path.join(__dirname, 'explorer/build')));
+
+app.get('/explore', async(req, res) => {
+  res.sendFile(path.join(__dirname, 'explorer/build', 'index.html'));
+});
+
+app.post('/explorecheck', async(req, res) => {
+  const { clusterurl } = req.headers;
+    if(
+      clusterurl&&
+      clusterUrl_serverUrl_map[clusterurl]&&
+      cachedSchemas[clusterurl]
+    ){
+      const graphqlSchemaObj = introspectionFromSchema(cachedSchemas[clusterurl]);
+      res.send({
+        data: graphqlSchemaObj
+      })
+    }
+  return res.send({data: 'nice'})
+});
+
+
 // GQL QUERIES
 // how to handle...
 // 1 return promise that has set interval checking completed servers
@@ -870,6 +900,7 @@ const createWorker = () => {
             processDetails?.dereferencedSpec,
             processDetails?.subscriptionData,
           );
+          cachedSchemas[processDetails.clusterUrl]= schema;
           await onSchemaGenerated(
             processDetails.clusterUrl,
             worker.threadId,
