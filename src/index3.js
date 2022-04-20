@@ -57,6 +57,8 @@ let connectClientQueue= {};
 let clusterUrl_serverUrl_map= {};
 let internalServerReference= {};
 let cachedSchemas = {};
+
+let runningWorkers=0;
 // ## proto buffs 
 
 // ## create priority queues
@@ -104,6 +106,21 @@ app.get('/explore', async(req, res) => {
 });
 
 app.post('/explorecheck', async(req, res) => {
+  const { clusterurl } = req.headers;
+    if(
+      clusterurl&&
+      clusterUrl_serverUrl_map[clusterurl]&&
+      cachedSchemas[clusterurl]
+    ){
+      const graphqlSchemaObj = introspectionFromSchema(cachedSchemas[clusterurl]);
+      res.send({
+        data: graphqlSchemaObj
+      })
+    }
+  return res.send({data: {error: {errorPayload: 'cluster does not exist'}}})
+});
+
+app.post('/exploreget', async(req, res) => {
   const { clusterurl } = req.headers;
     if(
       clusterurl&&
@@ -824,61 +841,12 @@ const pairNewServerToWorker = (threadId, clusterUrl, serverUrl) => {
   serverUrl&&(clusterUrl_serverUrl_map[clusterUrl]= serverUrl);
 }
 
-const onWorkerStarted = async() => {
+const onWorkerStarted = async(threadId) => {
   // ## Better solution in future
-  const getBasicToken = async() => {
-    try {
-      if(process.env.CONDUCKTOR_K8S_ONBOARD_USER&&process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD){
-        const basicAuthFormat= `${process.env.CONDUCKTOR_K8S_ONBOARD_USER}:${process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD}`;
-        const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
-        var options = {
-          method: 'POST',
-          url: process.env.AUTH_URL,
-          headers: {
-            'Authorization': `Basic ${basicAuthBase64}`
-          }
-        };
-        return new Promise((resolve, reject) => {
-          request(options, function (error, response) {
-            if (error) throw new Error(error);
-            const data= JSON.parse(response.body)
-            if (!data.jwt) throw new Error('request error');
-            resolve(data?.jwt);
-          });
-        })
-      }
-    } catch (error) {
-      return {
-        error: {
-          errorPayload: error
-        }
-      }
-    }
-  }
+  printColor('blue', 'Worker has started', threadId)
 
-  printColor('blue', 'Worker has started')
-  !isServerStart&&serverStart();
-  isServerStart= true;
-
-  //check and preload
-  if(config?.preLoad){
-    const token= await getBasicToken();
-    if(!token.error){
-      const preLoadList= config.preLoad;
-      preLoadCount= preLoadList?.length;
-      for(let clusterUrl of config.preLoad){
-        onAddWorkerJob(
-          workerCommandEnum.preLoad,
-          {
-            kubeApiUrl: clusterUrl,
-            schemaToken: `Bearer ${token}`
-          }
-        )
-      }
-    }
-  }else{
-    isPreloaded=true;
-  }
+  runningWorkers++;
+  postWorkersStart();
 }
 
 const createWorker = () => {
@@ -911,7 +879,7 @@ const createWorker = () => {
         else if(process === workerProcesseesEnum.init){
           const { success }= processDetails;
             // check preload
-            onWorkerStarted();
+            onWorkerStarted(worker.threadId);
         }
         else if(process === workerProcesseesEnum.preLoad){
           onPostPreLoad(worker.threadId, processDetails.clusterUrl, true);
@@ -970,6 +938,67 @@ const serverStart = () => {
   wsServer.listen(PORT, () => {
     printColor('green', `Server istening on port ${wsServer.address().port} 🚀🚀🚀`);
   }) 
+}
+
+const preLoader = async() => {
+    // ## Better solution in future
+    const getBasicToken = async() => {
+      try {
+        if(process.env.CONDUCKTOR_K8S_ONBOARD_USER&&process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD){
+          const basicAuthFormat= `${process.env.CONDUCKTOR_K8S_ONBOARD_USER}:${process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD}`;
+          const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
+          var options = {
+            method: 'POST',
+            url: process.env.AUTH_URL,
+            headers: {
+              'Authorization': `Basic ${basicAuthBase64}`
+            }
+          };
+          return new Promise((resolve, reject) => {
+            request(options, function (error, response) {
+              if (error) throw new Error(error);
+              const data= JSON.parse(response.body)
+              if (!data.jwt) throw new Error('request error');
+              resolve(data?.jwt);
+            });
+          })
+        }
+      } catch (error) {
+        return {
+          error: {
+            errorPayload: error
+          }
+        }
+      }
+    }
+  
+    !isServerStart&&serverStart();
+    isServerStart= true;
+  
+    //check and preload
+    if(config?.preLoad){
+      const token= await getBasicToken();
+  
+      if(!token.error){
+        const preLoadList= config.preLoad;
+        preLoadCount= preLoadList?.length;
+        for(let clusterUrl of config.preLoad){
+          const freePort= serverCache.getUnusedPort();
+          serverCache.movePortQueueToPending(freePort, clusterUrl);
+
+          genServerComm(freePort, clusterUrl, token);
+        }
+      }
+    }else{
+      isPreloaded=true;
+    }
+}
+
+const postWorkersStart = () => {
+  if(runningWorkers === WORKER_COUNT){
+    printColor('green', `All workers have started!`);
+    preLoader();
+  }
 }
 
 // INIT STARTUP
