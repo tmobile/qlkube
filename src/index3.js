@@ -120,21 +120,6 @@ app.post('/explorecheck', async(req, res) => {
   return res.send({data: {error: {errorPayload: 'cluster does not exist'}}})
 });
 
-app.post('/exploreget', async(req, res) => {
-  const { clusterurl } = req.headers;
-    if(
-      clusterurl&&
-      clusterUrl_serverUrl_map[clusterurl]&&
-      cachedSchemas[clusterurl]
-    ){
-      const graphqlSchemaObj = introspectionFromSchema(cachedSchemas[clusterurl]);
-      res.send({
-        data: graphqlSchemaObj
-      })
-    }
-  return res.send({data: 'nice'})
-});
-
 
 // GQL QUERIES
 // how to handle...
