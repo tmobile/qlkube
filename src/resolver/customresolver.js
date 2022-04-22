@@ -14,7 +14,6 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
         let apiUrl = context.clusterUrl + k8sApiUrlPath;
         apiUrl = apiUrl.replace('{namespace}', args['namespace']);
         apiUrl = apiUrl.replace('{name}', args['name']);
-        // logger.debug("getK8SCustomResolver : processing url " + apiUrl);
 
         let options;
         if(httpMethod === 'put'){
@@ -93,8 +92,7 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
                         responseHeaders: response.headers,
                         responseBody
                     };
-                    console.log('responseBody', responseBody)
-
+                    
                     reject(graphQLErrorWithExtensions(errorString, extensions));
                     return;
                 }
@@ -112,7 +110,6 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
                 let responseBody;
                 try {
                     responseBody = JSON.parse(body);
-                    console.log('responseBody', responseBody)
                 } catch (e) {
                     const errorString = `Error thrown parsing response body :: ${e}`;
                     httpLog(errorString);

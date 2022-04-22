@@ -827,7 +827,6 @@ const pairNewServerToWorker = (threadId, clusterUrl, serverUrl) => {
 }
 
 const onWorkerStarted = async(threadId) => {
-  // ## Better solution in future
   printColor('blue', 'Worker has started', threadId)
 
   runningWorkers++;
