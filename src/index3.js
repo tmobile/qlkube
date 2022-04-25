@@ -79,7 +79,7 @@ let WORKER_COUNT= 4;
 
 
 process.on('unhandledRejection', (reason, p) => {
-  console.log('Unhandled Rejection at: Promise')
+  console.log('Unhandled Rejection at: Promise', reason, p)
   logger.debug('This is probably from a closed websocket');
 });
 

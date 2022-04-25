@@ -14,10 +14,7 @@ const SwaggerClient = require('swagger-client')
 const { getK8SCustomResolver } = require('../resolver/customresolver');
 const { isMutation } = require('../enum/schemaProcessEnum');
 const {
-    createSchema_Trial,
-    getWatchables,
-    deleteDeprecatedWatchPaths,
-    deleteWatchParameters,
+    createSchema_Trial
 } = require('../schema');
 const { printColor } = require('./consoleColorLogger')
 
@@ -36,7 +33,7 @@ const getTypeName = (refField, field) => {
     if(refField){
         const itemRef= refField;
         const rawName= itemRef.split('/').slice(-1).pop();
-        const finalName = rawName.replaceAll(/[.-]/g, '')
+        const finalName = rawName.replaceAll(/[.-]/g, '');
         return finalName;
     }else{
         // ## look into :: better naming
@@ -207,7 +204,7 @@ const processDefinitions = (specDefs) => {
             type: objType,
             data: null,
             dataRef: typeName,
-            desc: fieldData?.description
+            desc: fieldData?.description || null
         });
 
         if(gqlObjectMap?.[typeName]){}
@@ -216,7 +213,7 @@ const processDefinitions = (specDefs) => {
             miniStream=[{
                 name: typeName,
                 type: 'object',
-                desc: fieldData?.description
+                desc: fieldData?.description || null
             }];
             specExplorer(sendItem)
         }
@@ -250,9 +247,11 @@ const processDefinitions = (specDefs) => {
     // process each using recursive function
     for(const [path, spec] of Object.entries(specDefs)){
         const typeName= path.replaceAll('.', "");
+        const typeName2= sanitizeField(typeName) ;
         miniStream=[{
-            name: typeName,
-            type: 'object'
+            name: typeName2,
+            type: 'object',
+            desc:null
         }];
         stream=[];
         if(spec.properties){
@@ -271,7 +270,7 @@ const processOperations = (specPaths, gqlObjectMap) => {
     let queryFields = {};
     let mutationFields = {};
     let preSubList= [];
-    
+
     const processOperation = (opType, opData, path) => {
         const { parameters=[], responses, operationId }= opData;
         const okRes= responses['200']?.schema;
