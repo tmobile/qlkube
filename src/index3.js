@@ -113,10 +113,11 @@ app.post('/explorecheck', async(req, res) => {
       cachedSchemas[clusterurl]
     ){
       const graphqlSchemaObj = introspectionFromSchema(cachedSchemas[clusterurl]);
-      res.send({
+      return res.send({
         data: graphqlSchemaObj
       })
     }
+    
   return res.send({data: {error: {errorPayload: 'cluster does not exist'}}})
 });
 

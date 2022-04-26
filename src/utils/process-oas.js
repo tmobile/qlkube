@@ -153,7 +153,7 @@ const processDefinitions = (specDefs) => {
                     }
                     default : {
                         // ## unknown field type, slap in JSON
-                        typeObj=GraphQLList(GraphQLJSON) 
+                        typeObj=GraphQLJSON
                     }
                 }
             }
