@@ -43,7 +43,7 @@ const connectSub = (
                 },
                 {
                   next: onNext,
-                  error: (er) => console.log('Subscription error!' ,er),
+                  error: (er) => onNext({data: {error: { errorPayload: er}}}),
                   complete: () => console.log('Subscription complete!', connectionParams.clientSubId),
                   onclose: () => console.log('onclose '),
                   

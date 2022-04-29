@@ -24,6 +24,11 @@ const {
   ConnectSubArg, 
   ConnectQueryArg 
 } = require('./models/argumentTypes');
+
+const {
+  introspectionFromSchema,
+} = require('graphql');
+
 const { connectSub, connectQuery, connectMonoSub } = require('./utils/internalServerConnect');
 const { generateServer } = require('./utils/generateGqlServer')
 const { requestTypeEnum } = require('./enum/requestEnum');
@@ -31,7 +36,9 @@ const { printColor } = require('./utils/consoleColorLogger');
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 const inCluster = process.env.IN_CLUSTER !== 'false';
+
 logger.info({ inCluster }, 'cluster mode configured');
+
 const rawConfig= nodeFs.readFileSync(path.join(__dirname, './config/config.json'));
 const config= JSON.parse(rawConfig);
 
@@ -50,6 +57,8 @@ let connectClientQueue= {};
 let clusterUrl_serverUrl_map= {};
 let internalServerReference= {};
 let cachedSchemas = {};
+
+let runningWorkers=0;
 // ## proto buffs 
 
 // ## create priority queues
@@ -68,8 +77,9 @@ let WORKER_MAP= {};
 let isServerStart= false;
 let WORKER_COUNT= 4;
 
+
 process.on('unhandledRejection', (reason, p) => {
-  console.log('Unhandled Rejection at: Promise')
+  console.log('Unhandled Rejection at: Promise', reason, p)
   logger.debug('This is probably from a closed websocket');
 });
 
@@ -88,7 +98,30 @@ setInterval(() => {
   checkServerConnections();
 }, 15000)
 
-let hmm = {}
+
+app.use(express.static(path.join(__dirname, 'explorer/build')));
+
+app.get('/explore', async(req, res) => {
+  res.sendFile(path.join(__dirname, 'explorer/build', 'index.html'));
+});
+
+app.post('/explorecheck', async(req, res) => {
+  const { clusterurl } = req.headers;
+    if(
+      clusterurl&&
+      clusterUrl_serverUrl_map[clusterurl]&&
+      cachedSchemas[clusterurl]
+    ){
+      const graphqlSchemaObj = introspectionFromSchema(cachedSchemas[clusterurl]);
+      return res.send({
+        data: graphqlSchemaObj
+      })
+    }
+    
+  return res.send({data: {error: {errorPayload: 'cluster does not exist'}}})
+});
+
+
 // GQL QUERIES
 // how to handle...
 // 1 return promise that has set interval checking completed servers
@@ -794,61 +827,11 @@ const pairNewServerToWorker = (threadId, clusterUrl, serverUrl) => {
   serverUrl&&(clusterUrl_serverUrl_map[clusterUrl]= serverUrl);
 }
 
-const onWorkerStarted = async() => {
-  // ## Better solution in future
-  const getBasicToken = async() => {
-    try {
-      if(process.env.CONDUCKTOR_K8S_ONBOARD_USER&&process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD){
-        const basicAuthFormat= `${process.env.CONDUCKTOR_K8S_ONBOARD_USER}:${process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD}`;
-        const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
-        var options = {
-          method: 'POST',
-          url: process.env.AUTH_URL,
-          headers: {
-            'Authorization': `Basic ${basicAuthBase64}`
-          }
-        };
-        return new Promise((resolve, reject) => {
-          request(options, function (error, response) {
-            if (error) throw new Error(error);
-            const data= JSON.parse(response.body)
-            if (!data.jwt) throw new Error('request error');
-            resolve(data?.jwt);
-          });
-        })
-      }
-    } catch (error) {
-      return {
-        error: {
-          errorPayload: error
-        }
-      }
-    }
-  }
+const onWorkerStarted = async(threadId) => {
+  printColor('blue', 'Worker has started', threadId)
 
-  printColor('blue', 'Worker has started')
-  !isServerStart&&serverStart();
-  isServerStart= true;
-
-  //check and preload
-  if(config?.preLoad){
-    const token= await getBasicToken();
-    if(!token.error){
-      const preLoadList= config.preLoad;
-      preLoadCount= preLoadList?.length;
-      for(let clusterUrl of config.preLoad){
-        onAddWorkerJob(
-          workerCommandEnum.preLoad,
-          {
-            kubeApiUrl: clusterUrl,
-            schemaToken: `Bearer ${token}`
-          }
-        )
-      }
-    }
-  }else{
-    isPreloaded=true;
-  }
+  runningWorkers++;
+  postWorkersStart();
 }
 
 const createWorker = () => {
@@ -870,6 +853,7 @@ const createWorker = () => {
             processDetails?.dereferencedSpec,
             processDetails?.subscriptionData,
           );
+          cachedSchemas[processDetails.clusterUrl]= schema;
           await onSchemaGenerated(
             processDetails.clusterUrl,
             worker.threadId,
@@ -880,7 +864,7 @@ const createWorker = () => {
         else if(process === workerProcesseesEnum.init){
           const { success }= processDetails;
             // check preload
-            onWorkerStarted();
+            onWorkerStarted(worker.threadId);
         }
         else if(process === workerProcesseesEnum.preLoad){
           onPostPreLoad(worker.threadId, processDetails.clusterUrl, true);
@@ -939,6 +923,67 @@ const serverStart = () => {
   wsServer.listen(PORT, () => {
     printColor('green', `Server istening on port ${wsServer.address().port} 🚀🚀🚀`);
   }) 
+}
+
+const preLoader = async() => {
+    // ## Better solution in future
+    const getBasicToken = async() => {
+      try {
+        if(process.env.CONDUCKTOR_K8S_ONBOARD_USER&&process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD){
+          const basicAuthFormat= `${process.env.CONDUCKTOR_K8S_ONBOARD_USER}:${process.env.CONDUCKTOR_K8S_ONBOARD_PASSWORD}`;
+          const basicAuthBase64= await Buffer.from(basicAuthFormat).toString('base64');
+          var options = {
+            method: 'POST',
+            url: process.env.AUTH_URL,
+            headers: {
+              'Authorization': `Basic ${basicAuthBase64}`
+            }
+          };
+          return new Promise((resolve, reject) => {
+            request(options, function (error, response) {
+              if (error) throw new Error(error);
+              const data= JSON.parse(response.body)
+              if (!data.jwt) throw new Error('request error');
+              resolve(data?.jwt);
+            });
+          })
+        }
+      } catch (error) {
+        return {
+          error: {
+            errorPayload: error
+          }
+        }
+      }
+    }
+  
+    !isServerStart&&serverStart();
+    isServerStart= true;
+  
+    //check and preload
+    if(config?.preLoad){
+      const token= await getBasicToken();
+  
+      if(!token.error){
+        const preLoadList= config.preLoad;
+        preLoadCount= preLoadList?.length;
+        for(let clusterUrl of config.preLoad){
+          const freePort= serverCache.getUnusedPort();
+          serverCache.movePortQueueToPending(freePort, clusterUrl);
+
+          genServerComm(freePort, clusterUrl, token);
+        }
+      }
+    }else{
+      isPreloaded=true;
+    }
+}
+
+const postWorkersStart = () => {
+  if(runningWorkers === WORKER_COUNT){
+    printColor('green', `All workers have started!`);
+    preLoader();
+  }
 }
 
 // INIT STARTUP
