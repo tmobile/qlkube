@@ -1,6 +1,5 @@
 let chai = require('chai'); 
 const {
-    createSchema,
     getWatchables,
     deleteDeprecatedWatchPaths,
     deleteWatchParameters,
@@ -8,14 +7,17 @@ const {
     hasWatchExp
 } = require('../src/schema');
 const utilities = require('../src/utilities');
-const openApiJSON = require('./openpispec.json')
-const fs = require('fs').promises;
+const openApiJSON = require('./openpispec.json');
+const { dereferenceOpenApiSpec } = require('../src/oas');
+const { getSchema } = require('../src/utils/process-oas');
+
 require('dotenv').config();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 
 describe('functions in schema.js', () => {
     let kubeApiUrl= 'https://kubernetes.default.svc';
     let oasRaw;
+    let derefOas;
     let oasWatchable;
     let subs;
     let oas;
@@ -81,15 +83,17 @@ describe('functions in schema.js', () => {
         chai.assert.exists(mappedK8Paths[0]['schemaType'])
     })
 
-    it('should generate gql schema', async() => {
+    it('return dereferenced open api spec', async() => {
+        derefOas = await dereferenceOpenApiSpec(openApiJSON);
+        chai.assert.exists(derefOas['spec']['paths']);
 
-        const schema = await createSchema(
-            oas,
-            kubeApiUrl,
-            mappedK8Paths,
-            subs.mappedWatchPath,
-            subs.mappedNamespacedPaths
-        );
+    });
+
+    it('should generate gql schema', async() => {
+        const schema = await getSchema(
+            derefOas,
+            subs
+        )
         chai.assert.equal(typeof(schema), 'object')
     })
 })
