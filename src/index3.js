@@ -39,9 +39,6 @@ const inCluster = process.env.IN_CLUSTER !== 'false';
 
 logger.info({ inCluster }, 'cluster mode configured');
 
-const rawConfig= nodeFs.readFileSync(path.join(__dirname, './config/config.json'));
-const config= JSON.parse(rawConfig);
-
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
@@ -959,7 +956,15 @@ const preLoader = async() => {
   
     !isServerStart&&serverStart();
     isServerStart= true;
-  
+
+    if(!nodeFs.existsSync(path.join(__dirname, './config/config.json'))){
+      isPreloaded = true;
+      return;
+    };
+
+    const rawConfig = nodeFs.readFileSync(path.join(__dirname, './config/config.json'));
+    const config = JSON.parse(rawConfig);
+
     //check and preload
     if(config?.preLoad){
       const token= await getBasicToken();
