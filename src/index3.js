@@ -191,9 +191,14 @@ wss.on('connection', function connection(ws) {
   ws.addEventListener('error', (err) => console.log(err.message));
   ws.on('message', function message(data) {
     try {
+      if(data === requestTypeEnum.ping){
+        ws?.send(
+          JSON.stringify('pong')
+        );
+        return;
+      }
       const connectionMessage= JSON.parse(data);
       const { requestType, clientId, query, connectionParams }= connectionMessage;
-
       // SUBSCRIPTION REQUEST :: CONNECT
       if(requestType === requestTypeEnum.subscribe){
         ws.clientId= clientId;
