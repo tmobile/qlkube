@@ -4,7 +4,7 @@
   "description": "",
   "main": "src/index3.js",
   "scripts": {
-    "start": "node src/index3.js",
+    "start": "node --max-old-space-size=4096 src/index3.js",
     "local": "DEBUG=http IN_CLUSTER=false npm start",
     "local-windows": "set IN_CLUSTER=false&&node src/index.js",
     "test": "mocha test --timeout 30000",
