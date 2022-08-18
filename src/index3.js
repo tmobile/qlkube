@@ -766,23 +766,6 @@ const onPostPreLoad = (threadId, clusterUrl, commStatus) => {
   }
 }
 
-const removeClusterUrlFromServerMap = (threadId, clusterUrl) => {
-  let mapRef= worker_servers_map[threadId];
-  worker_servers_map[threadId] = mapRef.filter((clstrUrl) =>  clstrUrl !== clusterUrl);
-}
-
-const onInternalServerDestroyed = (clusterUrl, threadId) => {
-
-  // remove and set server cache
-  serverCache.onServerDestroy(clusterUrl);
-
-  // update worker server map ## fix no worker
-  removeClusterUrlFromServerMap(threadId, clusterUrl);
-
-  // reset worker status
-  changeWorkerStatus(threadId, workerStatusEnum.idle);
-}
-
 // CONNECTS SOCKETS THAT ARE WAITING ON GQL SERVER TO BE GENERATED
 const connectWaitingSockets = (clusterUrl, serverUrl, connectFlag='completed') => {
   if(connectClientQueue[clusterUrl]){
