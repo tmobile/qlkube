@@ -1,5 +1,3 @@
-const express = require('express');
-const { graphqlHTTP } = require('express-graphql');
 const { 
     GraphQLString, 
     GraphQLBoolean, 
@@ -10,7 +8,6 @@ const {
     GraphQLList, 
 } = require('graphql');
 const { GraphQLJSON } = require('graphql-type-json');
-const SwaggerClient = require('swagger-client')
 const { getK8SCustomResolver } = require('../resolver/customresolver');
 const { isMutation } = require('../enum/schemaProcessEnum');
 const {
@@ -402,29 +399,4 @@ const getSchema = async(
         }
     }
 }
-
-const testGetSchema = () => {
-    const { lol } = require('../test_spec.js');
-    if(!lol?.spec) return;
-    getSchema(lol)
-}
-
-// test server with graphiql
-// using locally saved spec
-const testServeGql = async() => {
-    const { lol } = require('../test_spec.js');
-    if(!lol?.spec) return;
-    const schema = await getSchema(lol.spec);
-    var app = express();
-    app.use('/graphql', graphqlHTTP({
-      schema: schema,
-      graphiql: true,
-    }));
-    app.listen(9090);
-    console.log('Running a GraphQL API server at http://localhost:9090/graphql');
-}
-
-// testGetSchema();
-// testServeGql()
-
 exports.getSchema = getSchema;

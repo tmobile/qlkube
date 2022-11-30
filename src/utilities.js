@@ -1,25 +1,4 @@
 /* eslint-disable */
-const Oas3Tools = require('../openapi-to-graphql/lib/oas_3_tools');
-const preprocessor_1 = require('../openapi-to-graphql/lib/preprocessor');
-const schema_builder_1 = require('../openapi-to-graphql/lib/schema_builder');
-const getDefaultGraphQlSchemaOptions = require('../model/schemaDefaultOptions');
-
-async function mapGraphQlDefaultPaths(spec) {
-  options = getDefaultGraphQlSchemaOptions();
-  return new Promise((resolve, reject) => {
-    Oas3Tools.getValidOAS3(spec)
-      .then((oas) => {
-        resolve(translateOpenAPIToGraphQLREV([oas], options));
-      })
-      .catch((err) => {
-        resolve( {
-          error:{
-            errorPayload:err
-          }
-        })
-      });
-  });
-}
 // ## check if get req has x-kubernetes-group-version-kind ?
 // for fields that have this get $$ref and stringify
 function mapK8ApiPaths(oas, pathNames, graphQlSchemaMap) {
@@ -53,22 +32,4 @@ function mapK8ApiPaths(oas, pathNames, graphQlSchemaMap) {
     .filter((obj) => obj !== false));
 }
 
-const translateOpenAPIToGraphQLREV = (data) => {
-  let schemaTypeMap = {};
-
-  Object.entries(data.operations).forEach(([operationId, operation]) => {
-    const field = schema_builder_1.getGraphQLType({
-      def: operation.responseDefinition,
-      data,
-      operation,
-    });
-    schemaTypeMap[operation.path] = field;
-  });
-  return {
-    graphQlSchemaMap:schemaTypeMap,
-  };
-}
-
-exports.mapGraphQlDefaultPaths = mapGraphQlDefaultPaths;
 exports.mapK8ApiPaths = mapK8ApiPaths;
-exports.translateOpenAPIToGraphQLREV = translateOpenAPIToGraphQLREV;
