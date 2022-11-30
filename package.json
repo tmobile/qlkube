@@ -2,9 +2,9 @@
   "name": "qlkube",
   "version": "1.0.0",
   "description": "",
-  "main": "src/index3.js",
+  "main": "src/index4.js",
   "scripts": {
-    "start": "node --max-old-space-size=4096 src/index3.js",
+    "start": "node --max-old-space-size=1100 src/index4.js",
     "local": "DEBUG=http IN_CLUSTER=false npm start",
     "local-windows": "set IN_CLUSTER=false&&node src/index.js",
     "test": "mocha test --timeout 30000",

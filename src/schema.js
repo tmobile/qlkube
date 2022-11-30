@@ -1,11 +1,8 @@
 /* eslint-disable */
 const { GraphQLString, GraphQLSchema, GraphQLObjectType } = require('graphql');
 const { mergeSchemas } = require('graphql-tools');
-const { createGraphQLSchema } = require('../openapi-to-graphql');
 const { logger } = require('./log');
-const { getK8SCustomResolver } = require('./resolver/customresolver');
 const watch = require('./watch');
-const utilities = require('./utilities');
 
 const customSubArgs = {
   'PodLogs': {
@@ -152,40 +149,6 @@ exports.deleteDeprecatedWatchPaths = (oas) => {
   return newOAS;
 };
 
-async function oasToGraphQlSchema(oas, kubeApiUrl, finalOas) {
-  const { schema, data } = await createGraphQLSchema(oas, {
-    baseUrl: kubeApiUrl,
-    viewer: false,
-    customResolvers: {
-      Kubernetes: {
-        "/api/v1/namespaces/{namespace}/secrets/{name}": {
-          get: getK8SCustomResolver('/api/v1/namespaces/{namespace}/secrets/{name}', 'get')
-        },
-        "/api/v1/namespaces/{namespace}/configmaps/{name}": {
-          get: getK8SCustomResolver('/api/v1/namespaces/{namespace}/configmaps/{name}', 'get')
-        }
-      }
-    },
-    requestOptions: (method, path, title, resolverParams) => {
-      if (
-        resolverParams &&
-        resolverParams.context &&
-        resolverParams.context.clusterURL
-      ) {
-        return {
-          url: `${resolverParams.context.clusterURL}${path}`,
-        };
-      }
-      return null;
-    },
-    headers: (method, path, title, resolverParams) => ({
-      Authorization: `${resolverParams.context.authorization}`,
-      'Content-Type': method === 'patch' ? 'application/merge-patch+json' : 'application/json',
-      'Accept': 'application/json, */*'
-    }),
-  }, finalOas);
-  return {schema, data};
-}
 
 function createSubscriptionSchema(
   baseSchema,
@@ -325,55 +288,6 @@ function createSubscriptionSchema(
   return schema;
 }
 
-// ## Depreciated
-exports.createSchema = async (
-  oas,
-  kubeApiUrl,
-  watchableNonNamespacePaths,
-  mappedNamespacedPaths,
-  finalOas
-) => {
-
-  //.paths details about each endpoint
-  //.definitions no clue but looks important
-
-  const {schema:baseSchema, data} = await oasToGraphQlSchema(oas, kubeApiUrl, finalOas);
-  const { graphQlSchemaMap } = utilities.translateOpenAPIToGraphQLREV(data);// takes a while
-  const k8PathKeys = Object.keys(oas.paths);
-  const subscriptions = utilities.mapK8ApiPaths(
-    oas,
-    k8PathKeys,
-    graphQlSchemaMap
-  );
-  const schemas = [baseSchema];
-  const pathMap = {};
-
-  subscriptions.forEach((element) => {
-    let ObjectEventName;
-    if (element.k8sUrl === '/api/v1/namespaces/{namespace}/pods/{name}/log') {
-      element.k8sType = `${element.k8sType}Logs`
-      ObjectEventName = `${element.k8sType}Event`;
-    } else {
-      ObjectEventName = `${element.k8sType}Event`;
-    }
-    const includesNamespace = element.k8sUrl.includes('{namespace}');
-    const includesName = element.k8sUrl.includes('{name}');
-
-    if (includesName && includesNamespace && !pathMap[ObjectEventName]) {
-      pathMap[ObjectEventName] = true;
-      const schema = createSubscriptionSchema(
-        baseSchema,
-        element.schemaType,
-        element.k8sType,
-        element.k8sUrl,
-        watchableNonNamespacePaths,
-        mappedNamespacedPaths
-      );
-      schemas.push(schema);
-    }
-  });
-  return mergeSchemas({ schemas });
-};
 
 exports.createSchema_Trial = async (
   baseSchema,

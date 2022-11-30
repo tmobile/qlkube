@@ -4,16 +4,28 @@ const debug_1 = require("debug");
 const httpLog = debug_1.debug('http');
 const graphql_1 = require("graphql");
 
-function graphQLErrorWithExtensions(message, extensions) {
+const graphQLErrorWithExtensions = (message, extensions) => {
     return new graphql_1.GraphQLError(message, null, null, null, null, null, extensions);
 }
 
-function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
+const processExtraParams = (apiUrl, extraArgs) => {
+    apiUrl += '?';
+    for(let [key, val] of Object.entries(extraArgs)){
+        apiUrl += `${key}=${val}&`
+    }
+    if(apiUrl.charAt(apiUrl.length - 1) === '&'){
+        apiUrl = apiUrl.slice(0, -1)
+    }
+    return apiUrl
+}
+
+const getK8SCustomResolver = (k8sApiUrlPath, httpMethod) => {
     // Return resolve function :
     return (source, args, context, info) => {
         let apiUrl = context.clusterUrl + k8sApiUrlPath;
         apiUrl = apiUrl.replace('{namespace}', args['namespace']);
         apiUrl = apiUrl.replace('{name}', args['name']);
+
 
         let options;
         if(httpMethod === 'put'){
@@ -52,6 +64,14 @@ function getK8SCustomResolver(k8sApiUrlPath, httpMethod) {
             };
         }
         else{
+            const extraArgs = {...args};
+            delete extraArgs?.['name'];
+            delete extraArgs?.['namespace'];
+        
+            if(Object.keys(extraArgs).length > 0){
+                apiUrl = processExtraParams(apiUrl, extraArgs);
+            }
+
             const apiHeaders = {
                 Authorization: context.authorization,
                 'Content-Type': 'application/json'

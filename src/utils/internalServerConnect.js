@@ -63,11 +63,8 @@ const connectSub = (
 
 const connectQuery = async(
   internalServerUrl, 
-  query, 
-  connectionParams,
-  serverUsageCallback
-) => {
-
+  connectionParams
+  ) => {
     const client = createClient({
       url: internalServerUrl,
       webSocketImpl: ws,
@@ -86,21 +83,18 @@ const connectQuery = async(
         let result
         client.subscribe(
           {
-            query: query,
-            variables: connectionParams?.queryVariables
-
+            ...connectionParams
           },
           {
             next: (data) => {
               result = data;
             },
-            error: (err) => console.log('Query error :: ', err),
+            error: (err) => console.log(err),
             complete: () => resolve(result)
           }
         )
       })
-    })().catch(e => console.log('Query error :: ', e))
-    serverUsageCallback(connectionParams?.clusterUrl);
+    })().catch(e => console.log(e))
     return queryResp;
   }
 
